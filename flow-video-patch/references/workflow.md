@@ -54,7 +54,7 @@ python scripts/fit_patch.py --config "merge.json" --patch 0 --output "merge-prop
 - 保护原嘴：alpha，上半脸区域；保护区和羽化必须经实际运动检查。
 - 头部小幅变化：矩形或椭圆alpha，区域容纳原头和新头的全部轮廓。
 - 下颌/脖子接缝反复明显：试连续整头到肩领/上胸，多频段融合。对比宽柔边alpha和多频段，不预设一种永远最好。
-- 大幅遮挡、人物交叉、头发超出裁切：重新裁切、逐帧细遮罩或另用跟踪/合成工具；本包基础几何不解决所有遮挡。
+- 大幅遮挡、人物交叉、头发超出裁切：重新裁切、逐帧细遮罩如需另用跟踪/合成工具，先停止该步骤，完成白名单扩展核查并获用户明确批准；本包基础几何不解决所有遮挡。
 
 ```bash
 python scripts/flow_patch.py merge --config "merge-proposed.json" --output "patched.mp4" --dry-run

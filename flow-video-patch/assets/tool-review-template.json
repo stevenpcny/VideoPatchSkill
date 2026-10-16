@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "record_kind": "agent_manual_license_and_usage_record_not_os_attestation",
+  "policy_id": "flow-local-allowlist-v1",
+  "task_scope": null,
+  "planned_components": [],
+  "actual_components": [],
+  "out_of_list_reviews": [],
+  "review_entry_fields": {
+    "tool": null,
+    "version_and_build": null,
+    "official_source": null,
+    "purpose": null,
+    "transitive_dependencies_and_weights": [],
+    "license_findings": [],
+    "reviewed_at": null,
+    "commercial_use_review": "pending",
+    "security_review": "pending",
+    "restrictions": [],
+    "alternatives": [],
+    "user_approval": {
+      "status": "pending",
+      "evidence": null,
+      "approved_scope": null,
+      "installation_and_network_scope": null
+    },
+    "execution_status": "not_executed"
+  },
+  "overall_status": "not_reviewed",
+  "privacy": "Fill only in task directory; never redistribute completed records"
+}

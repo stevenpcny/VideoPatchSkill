@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "policy_id": "flow-local-allowlist-v1",
+  "package_version": "1.3",
+  "enforcement": "agent_instructions_not_an_os_sandbox",
+  "default_decision": "stop_for_any_unlisted_media_tool_dependency_model_service_or_plugin",
+  "allowed_scripts": [
+    "scripts/flow_patch.py",
+    "scripts/fit_patch.py"
+  ],
+  "allowed_test_scripts": [
+    "tests/smoke_test.py",
+    "tests/security_test.py"
+  ],
+  "allowed_runtime_components": [
+    {
+      "id": "cpython",
+      "scope": "Python interpreter and standard-library local file/JSON/hash/process operations only",
+      "conditions": "Supported security-patched branch; no arbitrary subprocess or network use"
+    },
+    {
+      "id": "numpy",
+      "distribution": "numpy",
+      "compatibility": ">=1.26,<3",
+      "scope": "Existing pixel and numeric operations"
+    },
+    {
+      "id": "opencv",
+      "distributions_choose_exactly_one": [
+        "opencv-python",
+        "opencv-python-headless"
+      ],
+      "compatibility": ">=4.10,<6",
+      "module": "cv2",
+      "scope": "Existing image processing and registration; no external model loading"
+    },
+    {
+      "id": "ffmpeg",
+      "executables": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "scope": "Local probe/decode/crop/scale/encode/mux/verify; libx264 video, AAC preparation, original audio copy",
+      "conditions": "Trusted patched build; actual linked/bundled dependencies and license notices checked"
+    }
+  ],
+  "allowed_host_capabilities": [
+    "Read skill instructions and task-authorized local files",
+    "Write task parameters/reports into authorized local directories",
+    "View task-local media using the host built-in preview",
+    "Read-only lookup of official license/security/version sources without uploading user media or executing retrieved code"
+  ],
+  "forbidden_without_review_and_approval": [
+    "Install/download/replace a tool or dependency",
+    "Invoke unlisted models, libraries, plugins, MCP integrations, services or media applications",
+    "Use Python/shell/helper scripts to invoke an unlisted dependency",
+    "Modify package scripts, requirements or the allowlist to bypass a stop",
+    "Reuse approval from a different user, version, purpose or task without explicit matching scope"
+  ],
+  "extension_required_order": [
+    "Stop affected operation",
+    "Identify exact tool/version/build/source/purpose and transitive dependencies or weights",
+    "Complete license/commercial-use/security review; unresolved means stopped",
+    "Present review and alternatives to current user",
+    "Obtain explicit user approval for that exact scope",
+    "Record approval and actual usage locally before execution"
+  ],
+  "compatibility_range_is_not_license_or_security_approval": true,
+  "user_approval_does_not_override_failed_review": true,
+  "runtime_attestation": "Agent records are declarations, not OS-enforced evidence; scripts do not intercept other host tool calls",
+  "known_open_security_items": [
+    "FFmpeg observed at 8.1 in prior audit; patched 8.1.2 or verified backport required for that branch",
+    "x264 advisory applicability and build patch status remain unconfirmed"
+  ],
+  "license_reference": "THIRD_PARTY_NOTICES.md",
+  "procedure_reference": "references/tool-policy.md"
+}
