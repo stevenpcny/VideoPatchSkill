@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "source": "source.mp4",
+  "source_size": [
+    1280,
+    720
+  ],
+  "fps": 24,
+  "prepare": {
+    "core": [
+      24,
+      72
+    ],
+    "context_frames": 12,
+    "crop": [
+      800,
+      40,
+      360,
+      640
+    ],
+    "output_size": [
+      180,
+      320
+    ],
+    "mask_regions": [
+      [
+        50,
+        40,
+        80,
+        90
+      ]
+    ],
+    "color_rgb": [
+      0,
+      0,
+      0
+    ]
+  }
+}

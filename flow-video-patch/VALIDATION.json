@@ -1,0 +1,58 @@
+{
+  "package_version": "1.2",
+  "update_scope": [
+    "Local-file input protocol restriction",
+    "Exclusive private outputs and failure cleanup",
+    "Configuration and pixel budgets; subprocess timeout and cleanup",
+    "Security regressions and runtime update conditions"
+  ],
+  "processing_scripts": "Security hardening; compositing behavior preserved by regression tests",
+  "behavioral_verification": {
+    "passed": 8,
+    "failed": 0,
+    "security_regressions_passed": 10,
+    "security_regressions_failed": 0,
+    "execution": "Independent extraction of final release ZIP; synthetic fixtures only",
+    "final_processing_and_test_files_match_candidate": true
+  },
+  "static_verification": [
+    "Skill structure",
+    "Relative documentation links",
+    "JSON parse and template geometry",
+    "No identifying project cases or personal paths",
+    "No runtime binaries, media, models, fonts or caches",
+    "SHA-256 manifest and ZIP integrity"
+  ],
+  "privacy": {
+    "project_cases": "Replaced with hypothetical examples",
+    "templates": "Generic demonstration values only",
+    "test_environment": "No account, hostname, absolute path or detailed machine version recorded",
+    "zip_metadata": "Fixed neutral timestamps, no UID/GID, comments or extended fields"
+  },
+  "limits": [
+    "Execution verified on macOS only; Windows/Linux not executed",
+    "No actual Flow generation or real-media visual acceptance",
+    "Third-party software is separately installed and retains its own license"
+  ],
+  "security_review": {
+    "pip_audit_installed": {
+      "numpy": "2.4.5",
+      "opencv-python-headless": "5.0.0.93",
+      "known_vulnerabilities": 0
+    },
+    "pip_audit_resolved": {
+      "numpy": "2.5.4",
+      "opencv-python": "5.0.0.93",
+      "known_vulnerabilities": 0
+    },
+    "external_runtime": "FFmpeg 8.1 observed; update to patched build required. Package does not include or replace runtime.",
+    "secret_scan": "No credentials or identifying project information found",
+    "bandit": "11 Low alerts manually reviewed; subprocess calls are expected; True is not a password",
+    "limitations": [
+      "Native-library audit is not exhaustive",
+      "No Windows/Linux execution",
+      "No malicious codec exploit execution",
+      "No global runtime upgrades"
+    ]
+  }
+}

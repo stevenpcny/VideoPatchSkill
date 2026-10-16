@@ -1,0 +1,14 @@
+# Local environments and generated files must never enter a release.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.report.json

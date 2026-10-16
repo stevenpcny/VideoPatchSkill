@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "source": "source.mp4",
+  "source_size": [
+    1280,
+    720
+  ],
+  "fps": 24,
+  "patches": [
+    {
+      "name": "person-a-segment-a",
+      "generated": "flow-result.mp4",
+      "target": [
+        24,
+        72
+      ],
+      "generated_start": 12,
+      "crop": [
+        800,
+        40,
+        360,
+        640
+      ],
+      "work_size": [
+        180,
+        320
+      ],
+      "source_to_generated_affine": [
+        1,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "matte": {
+        "region": [
+          10,
+          10,
+          160,
+          250
+        ],
+        "shape": "rect",
+        "feather": 10,
+        "protect": []
+      },
+      "blend": "multiband",
+      "levels": 3,
+      "fade_frames": 0,
+      "gain_bgr": [
+        1,
+        1,
+        1
+      ],
+      "offset_bgr": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
