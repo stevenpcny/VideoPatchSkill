@@ -1,12 +1,14 @@
 {
-  "package_version": "1.3",
+  "package_version": "1.4",
   "update_scope": [
-    "Explicit tool and purpose allowlist",
-    "Stop, license/security review, then explicit user approval for extensions",
-    "Local actual-usage and approval record template",
-    "No automatic installation or substitution; documented host enforcement limits"
+    "Body-skin matching reference after head replacement (seam-driven recolour, never re-shift generated pixels, exclude clothing and head)",
+    "Mandatory blend/match check of every patch against the original video in verification and completion criteria",
+    "(v1.3) Explicit tool and purpose allowlist",
+    "(v1.3) Stop, license/security review, then explicit user approval for extensions",
+    "(v1.3) Local actual-usage and approval record template",
+    "(v1.3) No automatic installation or substitution; documented host enforcement limits"
   ],
-  "processing_scripts": "Both processing scripts and both tests unchanged from v1.2",
+  "processing_scripts": "Both processing scripts and both tests unchanged from v1.3 (and v1.2)",
   "behavioral_verification": {
     "passed": 8,
     "failed": 0,
@@ -69,5 +71,18 @@
       "Changed tool version/build/purpose: re-review and scope approval",
       "Approved extension: local task record only, shared default policy unchanged"
     ]
+  },
+  "windows_run_v1_4": {
+    "platform": "Windows 11, Python 3.12, NumPy 2.3, OpenCV 5.0, FFmpeg 7.0 (not the patched 8.1.x build)",
+    "smoke": "6/8 passed (7/8 with PYTHONUTF8=1)",
+    "security": "8/10 passed",
+    "failures": [
+      "test_02: cp1252 console encoding (passes with PYTHONUTF8=1)",
+      "test_07: fixed colour fit not applied",
+      "symlink test: WinError 1314, symlink creation needs privilege",
+      "replacement-file test: WinError 32, file in use on rename"
+    ],
+    "same_failures_on_v1_3_zip": true,
+    "cause": "Pre-existing Windows compatibility of unchanged scripts/tests; not introduced by v1.4 documentation"
   }
 }

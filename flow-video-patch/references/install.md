@@ -55,3 +55,5 @@ Python、FFmpeg／ffprobe、NumPy与OpenCV均由接收电脑单独安装。本�
 分享时仅发送已检查的发行ZIP，不附实际配置、运行报告、.venv、缓存或媒体。
 
 安全修订版 v1.2：运行和转交前阅读 [安全使用与发布条件](../SECURITY.md)。新增复验命令：`python tests/security_test.py`。FFmpeg 8.1 分支须更新至 8.1.2 或采用供应商已回补相关安全补丁的构建；doctor 仅检查能力。
+
+Windows：v1.4 实测，在默认 cp1252 控制台下有一项测试会因编码失败。运行脚本和测试前请先设置 `PYTHONUTF8=1`（PowerShell：`$env:PYTHONUTF8=1`）。符号链接和文件占用相关的两项安全测试在 Windows 上仍会失败，详见 [验证说明](validation.md)。
