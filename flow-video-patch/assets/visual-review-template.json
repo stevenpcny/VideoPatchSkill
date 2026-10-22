@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "status": "pending_visual_review",
+  "status_options": ["pending_visual_review", "visual_fail", "visual_pass"],
+  "scope": "Fill in the intended repair, protected regions and whether the generated mouth is used",
+  "final_file": "patched.mp4",
+  "final_sha256": null,
+  "source_frame_interval": null,
+  "frame_mapping_evidence": null,
+  "technical_report": "patched.report.json",
+  "checks": {
+    "decode_dimensions_fps_frames": {"status": "not_run", "evidence": null},
+    "original_audio_payload": {"status": "not_run", "evidence": null},
+    "independent_return_alignment": {"status": "not_run", "evidence": null},
+    "all_patched_frames_static": {"status": "not_run", "evidence": null},
+    "matte_core_protection_and_flicker": {"status": "not_run", "evidence": null},
+    "native_and_magnified_edges": {"status": "not_run", "evidence": null},
+    "cut_boundaries_and_occlusions": {"status": "not_run", "evidence": null},
+    "expression_gaze_and_bilateral_blinks": {"status": "not_run", "evidence": null},
+    "face_neck_hand_color_and_texture": {"status": "not_run", "evidence": null},
+    "normal_speed_full_playback": {"status": "not_run", "evidence": null},
+    "actual_player_color": {"status": "not_run", "evidence": null},
+    "audio_listening_and_lip_sync": {"status": "not_run", "evidence": null},
+    "independent_patch_pasteback": {"status": "not_run", "evidence": null}
+  },
+  "check_status_options": ["not_run", "pass", "fail", "not_applicable"],
+  "instructions": "Record reviewer, evidence paths, frame/time intervals, people and limits in each evidence entry. Explain every not_applicable. Any failed applicable check means visual_fail; any unrun applicable check means pending_visual_review. Do not infer playback acceptance from technical tests or still images. Keep filled records private to the task."
+}
