@@ -1,28 +1,176 @@
 {
   "schema_version": 1,
-  "status": "pending_visual_review",
-  "status_options": ["pending_visual_review", "visual_fail", "visual_pass"],
+  "deliverable_type": "final_composite",
   "scope": "Fill in the intended repair, protected regions and whether the generated mouth is used",
-  "final_file": "patched.mp4",
-  "final_sha256": null,
-  "source_frame_interval": null,
+  "protected_regions": [],
+  "mouth_source": "",
+  "source": "source.mp4",
+  "output": "patched.mp4",
+  "output_sha256": "",
+  "fps": null,
+  "output_frames": null,
+  "repair_source_intervals_half_open": [],
   "frame_mapping_evidence": null,
-  "technical_report": "patched.report.json",
-  "checks": {
-    "decode_dimensions_fps_frames": {"status": "not_run", "evidence": null},
-    "original_audio_payload": {"status": "not_run", "evidence": null},
-    "independent_return_alignment": {"status": "not_run", "evidence": null},
-    "all_patched_frames_static": {"status": "not_run", "evidence": null},
-    "matte_core_protection_and_flicker": {"status": "not_run", "evidence": null},
-    "native_and_magnified_edges": {"status": "not_run", "evidence": null},
-    "cut_boundaries_and_occlusions": {"status": "not_run", "evidence": null},
-    "expression_gaze_and_bilateral_blinks": {"status": "not_run", "evidence": null},
-    "face_neck_hand_color_and_texture": {"status": "not_run", "evidence": null},
-    "normal_speed_full_playback": {"status": "not_run", "evidence": null},
-    "actual_player_color": {"status": "not_run", "evidence": null},
-    "audio_listening_and_lip_sync": {"status": "not_run", "evidence": null},
-    "independent_patch_pasteback": {"status": "not_run", "evidence": null}
+  "technical_validation": {
+    "status": "not_run",
+    "evidence": []
   },
-  "check_status_options": ["not_run", "pass", "fail", "not_applicable"],
-  "instructions": "Record reviewer, evidence paths, frame/time intervals, people and limits in each evidence entry. Explain every not_applicable. Any failed applicable check means visual_fail; any unrun applicable check means pending_visual_review. Do not infer playback acceptance from technical tests or still images. Keep filled records private to the task."
+  "technical_report": "patched.report.json",
+  "visual_checks": [
+    {
+      "id": "final_file_and_alignment",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "decode_dimensions_fps_frames",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "original_audio_payload",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "independent_return_alignment",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "expression_and_gaze_unchanged",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "all_repair_frames_contact_sheets",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "native_and_magnified_edges_and_background",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "matte_false_positives_holes_occlusions_and_flicker",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "ghosting_and_join_windows_frame_by_frame",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "skin_face_neck_hands_and_decoded_colors",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "full_scene_and_closeup_normal_speed_playback",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "original_audio_lipsync_and_breaths",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "independent_patch_roundtrip_placement_and_matte_once",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "blink_left_right_events",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "retime_correspondence_start_middle_end",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "numeric_alpha_and_protected_exterior",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "head_ring_halo_and_background_temporal",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "rgb_residual_range_and_extreme_pixels",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "same_scene_sharpness",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "native_player_color",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    }
+  ],
+  "check_status_values": [
+    "not_run",
+    "pass",
+    "fail",
+    "not_applicable"
+  ],
+  "issues": [],
+  "revisions_and_rechecks": [],
+  "overall_visual_status": "pending_visual_review",
+  "overall_status_values": [
+    "pending_visual_review",
+    "visual_pass",
+    "visual_fail"
+  ],
+  "instructions": "Only actual review with matching final-file evidence permits pass. Explain every not_applicable. Not-run applicable checks keep visual review pending; unresolved failures keep it failed. Technical pass alone never means seam-free or ghost-free. This record is not an automatic detector or authorization. Record reviewer, evidence paths, frame/time intervals, people and limits in each evidence entry. Keep filled records private to the task."
 }

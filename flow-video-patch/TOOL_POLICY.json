@@ -1,16 +1,19 @@
 {
   "schema_version": 1,
   "policy_id": "flow-local-allowlist-v1",
-  "package_version": "1.3",
+  "package_version": "2.0",
   "enforcement": "agent_instructions_not_an_os_sandbox",
   "default_decision": "stop_for_any_unlisted_media_tool_dependency_model_service_or_plugin",
   "allowed_scripts": [
     "scripts/flow_patch.py",
-    "scripts/fit_patch.py"
+    "scripts/fit_patch.py",
+    "scripts/qc_tools.py"
   ],
   "allowed_test_scripts": [
     "tests/smoke_test.py",
     "tests/security_test.py",
+    "tests/ffmpeg_regression.sh",
+    "tests/qc_tools_test.py",
     "tests/color_pipeline_test.py"
   ],
   "allowed_runtime_components": [
