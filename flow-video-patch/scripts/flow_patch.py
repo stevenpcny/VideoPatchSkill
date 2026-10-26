@@ -89,6 +89,69 @@ def stop_process(process):
         process.wait(timeout=5)
 
 
+# Explicit YUV<->BGR conversion. FFmpeg's implicit swscale paths truncate (about -1 level
+# per decode) and encode untagged BT.601, which shifts colour on every pass.
+KR_KB = {'bt709': (0.2126, 0.0722), 'bt601': (0.299, 0.114)}
+MATRIX_CODES = {'bt709': 1, 'bt470bg': 5, 'smpte170m': 6}
+PRIMARY_CODES = {'bt709': 1, 'bt470m': 4, 'bt470bg': 5, 'smpte170m': 6, 'smpte240m': 7}
+TRANSFER_CODES = {'bt709': 1, 'gamma22': 4, 'gamma28': 5, 'smpte170m': 6, 'smpte240m': 7,
+                  'iec61966-2-1': 13}
+
+
+def color_info(s):
+    """Matrix/range of a video stream; untagged follows players (>=720 lines BT.709)."""
+    if s.get('pix_fmt') in ('rgb24', 'bgr24'):
+        space, assumed = ('bt709' if s['height'] >= 720 else 'smpte170m'), True
+        full = False
+    else:
+        space = s.get('color_space')
+        assumed = space in (None, 'unknown')
+        if assumed:
+            space = 'bt709' if s['height'] >= 720 else 'smpte170m'
+        require(space in MATRIX_CODES,
+                f'Unsupported color matrix {space}; convert to BT.709 or BT.601 explicitly')
+        full = s.get('color_range') == 'pc' or s['pix_fmt'].startswith('yuvj')
+    default = 'bt709' if space == 'bt709' else 'smpte170m'
+    return {'matrix': 'bt709' if space == 'bt709' else 'bt601', 'matrix_tag': space,
+            'range': 'pc' if full else 'tv', 'assumed': assumed,
+            'primaries': s.get('color_primaries') if s.get('color_primaries') in PRIMARY_CODES else default,
+            'transfer': s.get('color_transfer') if s.get('color_transfer') in TRANSFER_CODES else default,
+            'rgb_input': s.get('pix_fmt') in ('rgb24', 'bgr24')}
+
+
+def stream_color(path):
+    s = json.loads(run([FFPROBE, '-v', 'error', '-select_streams', 'v:0', '-show_streams',
+                        '-of', 'json', '-protocol_whitelist', 'file', local_media(path)]))['streams'][0]
+    return color_info(s)
+
+
+def yuv_to_bgr(y, u, v, color):
+    kr, kb = KR_KB[color['matrix']]
+    y, u, v = (c.astype(np.float32) for c in (y, u, v))
+    if color['range'] == 'tv':
+        y, u, v = (y-16)*(255/219), (u-128)*(255/224), (v-128)*(255/224)
+    else:
+        u, v = u-128, v-128
+    r = y+2*(1-kr)*v
+    b = y+2*(1-kb)*u
+    g = (y-kr*r-kb*b)/(1-kr-kb)
+    return np.clip(np.rint(np.stack([b, g, r], -1)), 0, 255).astype(np.uint8)
+
+
+def bgr_to_yuv420(bgr, color):
+    kr, kb = KR_KB[color['matrix']]
+    f = bgr.astype(np.float32)
+    b, g, r = f[..., 0], f[..., 1], f[..., 2]
+    y = kr*r+(1-kr-kb)*g+kb*b
+    u, v = (b-y)/(2*(1-kb)), (r-y)/(2*(1-kr))
+    if color['range'] == 'tv':
+        y, u, v = 16+y*(219/255), u*(224/255), v*(224/255)
+    # 2x2 chroma average, centred like the encoder's default siting.
+    u = (u[0::2, 0::2]+u[1::2, 0::2]+u[0::2, 1::2]+u[1::2, 1::2])/4+128
+    v = (v[0::2, 0::2]+v[1::2, 0::2]+v[0::2, 1::2]+v[1::2, 1::2])/4+128
+    return b''.join(np.clip(np.rint(c), 0, 255).astype(np.uint8).tobytes() for c in (y, u, v))
+
+
 def probe(path):
     path = local_media(path)
     data = json.loads(run([FFPROBE, '-v', 'error', '-count_frames', '-show_streams',
@@ -122,7 +185,7 @@ def probe(path):
             'Audio starts at a nonzero timestamp; normalize offsets explicitly')
     require(len(times) == int(s['nb_read_frames']), 'Frame count mismatch')
     return {'size': [s['width'], s['height']], 'fps': str(fps), 'frames': len(times),
-            'audio': audio is not None}
+            'audio': audio is not None, 'color': color_info(s)}
 
 
 def sha(path):
@@ -165,12 +228,14 @@ def rectangle(value, frame, size):
 
 class Reader:
     """Sequential decoder; permits repeated indices, refuses backwards reads."""
-    def __init__(self, path, size):
+    def __init__(self, path, size, color=None):
         self.w, self.h = checked_size(size)
+        self.color = color or stream_color(path)
         self.log = tempfile.TemporaryFile()
+        fmt = 'bgr24' if self.color['rgb_input'] else 'yuv444p'
         self.p = subprocess.Popen([FFMPEG, '-v', 'error', '-noautorotate', *file_input(path),
                                    '-map', '0:v:0', '-an', '-fps_mode', 'passthrough',
-                                   '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-'],
+                                   '-f', 'rawvideo', '-pix_fmt', fmt, '-'],
                                   stdout=subprocess.PIPE, stderr=self.log)
         self.index = -1
         self.last = None
@@ -185,7 +250,11 @@ class Reader:
                 if not b:
                     raise ValueError(f'Decoder ended before frame {index}')
                 blocks.extend(b)
-            self.last = np.frombuffer(blocks, np.uint8).reshape(self.h, self.w, 3)
+            if self.color['rgb_input']:
+                self.last = np.frombuffer(blocks, np.uint8).reshape(self.h, self.w, 3)
+            else:
+                y, u, v = np.frombuffer(blocks, np.uint8).reshape(3, self.h, self.w)
+                self.last = yuv_to_bgr(y, u, v, self.color)
             self.index += 1
         return self.last
 
@@ -348,11 +417,18 @@ def merge_plan(cfg, info):
     return plans
 
 
-def encoder(path, size, fps, source, audio_filter=None):
-    cmd = [FFMPEG, '-v', 'error', '-n', '-f', 'rawvideo', '-pix_fmt', 'bgr24',
+def encoder(path, size, fps, source, color, audio_filter=None):
+    require(size[0] % 2 == 0 and size[1] % 2 == 0, 'Output dimensions must be even for yuv420p')
+    # Frames arrive as yuv420p already converted with the source matrix; tag via bitstream
+    # metadata, because output-side -colorspace flags make FFmpeg insert a lossy conversion.
+    tags = (f"h264_metadata=colour_primaries={PRIMARY_CODES[color['primaries']]}"
+            f":transfer_characteristics={TRANSFER_CODES[color['transfer']]}"
+            f":matrix_coefficients={MATRIX_CODES[color['matrix_tag']]}"
+            f":video_full_range_flag={int(color['range'] == 'pc')}")
+    cmd = [FFMPEG, '-v', 'error', '-n', '-f', 'rawvideo', '-pix_fmt', 'yuv420p',
            '-s', f'{size[0]}x{size[1]}', '-r', fps, '-protocol_whitelist', 'pipe', '-i', 'pipe:0', *file_input(source),
            '-map', '0:v:0', '-map', '1:a:0?', '-c:v', 'libx264', '-threads', '4',
-           '-crf', '17', '-preset', 'fast', '-pix_fmt', 'yuv420p']
+           '-crf', '17', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-bsf:v', tags]
     if audio_filter is None:
         cmd += ['-c:a', 'copy']
     else:
@@ -362,19 +438,20 @@ def encoder(path, size, fps, source, audio_filter=None):
 
 def process(cfg, info, mode, out):
     with contextlib.ExitStack() as stack:
-        source = Reader(cfg['source'], info['size']); stack.callback(source.close)
+        source = Reader(cfg['source'], info['size'], info['color']); stack.callback(source.close)
         if mode == 'prepare':
             plan = prepare_plan(cfg, info); p = cfg['prepare']; size = plan['size']
             fps = Fraction(info['fps']); first, last = plan['first'], plan['last']
             af = (f'atrim=start={float(first/fps)}:end={float(last/fps)},asetpts=PTS-STARTPTS,'
                   f'apad,atrim=duration={float((last-first)/fps)}')
-            cmd = encoder(out, size, info['fps'], cfg['source'], af)
+            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], af)
         else:
             plans = merge_plan(cfg, info); size = info['size']; first, last = 0, info['frames']
-            readers = [Reader(p['generated'], q['info']['size']) for p,q in zip(cfg['patches'],plans)]
+            readers = [Reader(p['generated'], q['info']['size'], q['info']['color'])
+                       for p,q in zip(cfg['patches'],plans)]
             for reader in readers:
                 stack.callback(reader.close)
-            cmd = encoder(out, size, info['fps'], cfg['source'])
+            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'])
             plan = {'size': size, 'frames': last, 'audio': info['audio']}
         log = stack.enter_context(tempfile.TemporaryFile())
         enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=log)
@@ -416,7 +493,7 @@ def process(cfg, info, mode, out):
                         support = cv2.resize(m,(w,h),interpolation=cv2.INTER_NEAREST)>0
                         delta[~support] = 0
                         scene[y:y+h,x:x+w] = np.clip(roi.astype(float)+delta,0,255).round().astype(np.uint8)
-                enc.stdin.write(scene.tobytes())
+                enc.stdin.write(bgr_to_yuv420(scene, info['color']))
             enc.stdin.close()
             code = enc.wait()
             log.seek(0)
