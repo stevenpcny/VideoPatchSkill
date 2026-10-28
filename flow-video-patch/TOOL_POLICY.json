@@ -10,7 +10,8 @@
   ],
   "allowed_test_scripts": [
     "tests/smoke_test.py",
-    "tests/security_test.py"
+    "tests/security_test.py",
+    "tests/color_pipeline_test.py"
   ],
   "allowed_runtime_components": [
     {

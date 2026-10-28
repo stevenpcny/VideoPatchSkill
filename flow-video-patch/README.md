@@ -13,6 +13,7 @@
 ```bash
 python scripts/flow_patch.py doctor
 python tests/smoke_test.py
+python tests/color_pipeline_test.py
 ```
 
 入口为[SKILL.md](SKILL.md)。本地处理不需要网络；安装依赖或使用外部生成服务需相应网络和账号权限。Flow生成由使用者自行完成。

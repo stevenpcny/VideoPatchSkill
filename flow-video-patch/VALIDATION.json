@@ -1,94 +1,56 @@
 {
-  "package_version": "1.5",
+  "package_version": "1.5.1",
   "update_scope": [
-    "Repair-boundary and expression preservation; eye/glasses/hand/clothing boundaries",
-    "Separate crop, generation mask and final matte; opaque replacement cores",
-    "Independent return alignment and per-person candidate selection",
-    "Join comparison, single final encoding, color handling and full original audio tail",
-    "Explicit pending/pass/fail visual review template and independent patch delivery metadata"
+    "flow_patch.py color pipeline: explicit BT.709/BT.601 + tv/pc decode and encode in NumPy, bitstream color tags via h264_metadata, unsupported matrices rejected",
+    "New tests/color_pipeline_test.py (8 tests)",
+    "SKILL.md, validation.md, TOOL_POLICY test list updated"
   ],
-  "processing_scripts": "Both processing scripts, both test files, requirements and TOOL_POLICY.json are byte-identical to v1.4 (bdd2dea); no processing capability or allowlist extension",
-  "behavioral_verification": {
-    "passed": 8,
-    "failed": 0,
-    "security_regressions_passed": 10,
-    "security_regressions_failed": 0,
-    "execution": "macOS candidate and independent extraction of v1.5 release ZIP; synthetic fixtures only",
-    "final_processing_and_test_files_match_candidate": true
+  "processing_scripts": "flow_patch.py changed (probe color info, Reader, encoder); fit_patch.py byte-identical to v1.5",
+  "tool_policy_scope": "Only new bundled test script listed; no new runtime, codec or service authorization (h264_metadata is a built-in FFmpeg bitstream filter)",
+  "current_behavioral_verification": {
+    "date": "2026-10-26",
+    "smoke_test": "Ran 8 tests OK",
+    "security_test": "Ran 10 tests OK",
+    "color_pipeline_test": "Ran 8 tests OK"
   },
-  "static_verification": [
-    "Skill quick_validate passed",
-    "Relative Markdown links and JSON parse",
-    "New review template defaults to pending_visual_review; all check statuses not_run",
-    "No identifying media, private paths, accounts, caches or runtime binaries in release",
-    "Processing scripts/tests/dependencies/tool policy byte-identical to v1.4",
-    "SHA-256 manifest, ZIP path safety, CRC and extracted-file equality"
-  ],
-  "privacy": {
-    "project_cases": "Replaced with hypothetical examples",
-    "templates": "Generic demonstration values only",
-    "test_environment": "No account, hostname, absolute path or detailed machine version recorded",
-    "zip_metadata": "Fixed neutral timestamps, no UID/GID, comments or extended fields"
-  },
-  "limits": [
-    "macOS execution only for v1.5; historical Windows failures remain, Linux not executed",
-    "No actual Flow generation or real-media normal-speed visual acceptance",
-    "No new tracking, per-frame-mask CLI, 10-bit/HDR support or automatic visual acceptance",
-    "No dependency upgrade or new vulnerability/license audit; prior security open items remain",
-    "Third-party software separately installed under its own licenses"
-  ],
-  "security_review": {
-    "pip_audit_installed": {
-      "numpy": "2.4.5",
-      "opencv-python-headless": "5.0.0.93",
-      "known_vulnerabilities": 0
-    },
-    "pip_audit_resolved": {
-      "numpy": "2.5.4",
-      "opencv-python": "5.0.0.93",
-      "known_vulnerabilities": 0
-    },
-    "external_runtime": "FFmpeg 8.1 observed; update to patched build required. Package does not include or replace runtime.",
-    "secret_scan": "No credentials or identifying project information found",
-    "bandit": "11 Low alerts manually reviewed; subprocess calls are expected; True is not a password",
-    "limitations": [
-      "Native-library audit is not exhaustive",
-      "No Windows/Linux execution",
-      "No malicious codec exploit execution",
-      "No global runtime upgrades"
+  "prior_validation": {
+    "package_version": "1.5",
+    "update_scope": [
+      "Repair-boundary and expression preservation; eye/glasses/hand/clothing boundaries",
+      "Separate crop, generation mask and final matte; opaque replacement cores",
+      "Independent return alignment and per-person candidate selection",
+      "Join comparison, single final encoding, color handling and full original audio tail",
+      "Explicit pending/pass/fail visual review template and independent patch delivery metadata"
     ],
-    "basis": "Historical audit retained for traceability, not rerun in v1.5; current security regressions do not establish dependency vulnerability clearance"
-  },
-  "tool_policy_validation": {
-    "policy_id": "flow-local-allowlist-v1",
-    "mechanism": "Agent instructions and declarative manifest; no OS-level enforcement",
-    "review": "Manual scenario walk-through and source inventory; not live independent-agent compliance testing",
-    "agent_compliance_guarantee": false,
-    "scenarios_reviewed": [
-      "Missing default dependency: stop, no automatic install",
-      "Request unlisted media library/model: review before requesting approval",
-      "User approval with unresolved license/security review: remain stopped",
-      "Config claims approved=true: not user authorization",
-      "Changed tool version/build/purpose: re-review and scope approval",
-      "Approved extension: local task record only, shared default policy unchanged"
-    ]
-  },
-  "historical_v1_4": {
+    "processing_scripts": "Both processing scripts, both test files, requirements and TOOL_POLICY.json are byte-identical to v1.4 (bdd2dea); no processing capability or allowlist extension",
     "behavioral_verification": {
       "passed": 8,
       "failed": 0,
       "security_regressions_passed": 10,
       "security_regressions_failed": 0,
-      "execution": "Independent extraction of final release ZIP; synthetic fixtures only",
+      "execution": "macOS candidate and independent extraction of v1.5 release ZIP; synthetic fixtures only",
       "final_processing_and_test_files_match_candidate": true
     },
     "static_verification": [
-      "Skill structure",
-      "Relative documentation links",
-      "JSON parse and template geometry",
-      "No identifying project cases or personal paths",
-      "No runtime binaries, media, models, fonts or caches",
-      "SHA-256 manifest and ZIP integrity"
+      "Skill quick_validate passed",
+      "Relative Markdown links and JSON parse",
+      "New review template defaults to pending_visual_review; all check statuses not_run",
+      "No identifying media, private paths, accounts, caches or runtime binaries in release",
+      "Processing scripts/tests/dependencies/tool policy byte-identical to v1.4",
+      "SHA-256 manifest, ZIP path safety, CRC and extracted-file equality"
+    ],
+    "privacy": {
+      "project_cases": "Replaced with hypothetical examples",
+      "templates": "Generic demonstration values only",
+      "test_environment": "No account, hostname, absolute path or detailed machine version recorded",
+      "zip_metadata": "Fixed neutral timestamps, no UID/GID, comments or extended fields"
+    },
+    "limits": [
+      "macOS execution only for v1.5; historical Windows failures remain, Linux not executed",
+      "No actual Flow generation or real-media normal-speed visual acceptance",
+      "No new tracking, per-frame-mask CLI, 10-bit/HDR support or automatic visual acceptance",
+      "No dependency upgrade or new vulnerability/license audit; prior security open items remain",
+      "Third-party software separately installed under its own licenses"
     ],
     "security_review": {
       "pip_audit_installed": {
@@ -112,19 +74,73 @@
       ],
       "basis": "Historical audit retained for traceability, not rerun in v1.5; current security regressions do not establish dependency vulnerability clearance"
     },
-    "windows_run_v1_4": {
-      "platform": "Windows 11, Python 3.12, NumPy 2.3, OpenCV 5.0, FFmpeg 7.0 (not the patched 8.1.x build)",
-      "smoke": "6/8 passed (7/8 with PYTHONUTF8=1)",
-      "security": "8/10 passed",
-      "failures": [
-        "test_02: cp1252 console encoding (passes with PYTHONUTF8=1)",
-        "test_07: fixed colour fit not applied",
-        "symlink test: WinError 1314, symlink creation needs privilege",
-        "replacement-file test: WinError 32, file in use on rename"
+    "tool_policy_validation": {
+      "policy_id": "flow-local-allowlist-v1",
+      "mechanism": "Agent instructions and declarative manifest; no OS-level enforcement",
+      "review": "Manual scenario walk-through and source inventory; not live independent-agent compliance testing",
+      "agent_compliance_guarantee": false,
+      "scenarios_reviewed": [
+        "Missing default dependency: stop, no automatic install",
+        "Request unlisted media library/model: review before requesting approval",
+        "User approval with unresolved license/security review: remain stopped",
+        "Config claims approved=true: not user authorization",
+        "Changed tool version/build/purpose: re-review and scope approval",
+        "Approved extension: local task record only, shared default policy unchanged"
+      ]
+    },
+    "historical_v1_4": {
+      "behavioral_verification": {
+        "passed": 8,
+        "failed": 0,
+        "security_regressions_passed": 10,
+        "security_regressions_failed": 0,
+        "execution": "Independent extraction of final release ZIP; synthetic fixtures only",
+        "final_processing_and_test_files_match_candidate": true
+      },
+      "static_verification": [
+        "Skill structure",
+        "Relative documentation links",
+        "JSON parse and template geometry",
+        "No identifying project cases or personal paths",
+        "No runtime binaries, media, models, fonts or caches",
+        "SHA-256 manifest and ZIP integrity"
       ],
-      "same_failures_on_v1_3_zip": true,
-      "cause": "Pre-existing Windows compatibility of unchanged scripts/tests; not introduced by v1.4 documentation"
-    }
-  },
-  "validation_date": "2026-10-22"
+      "security_review": {
+        "pip_audit_installed": {
+          "numpy": "2.4.5",
+          "opencv-python-headless": "5.0.0.93",
+          "known_vulnerabilities": 0
+        },
+        "pip_audit_resolved": {
+          "numpy": "2.5.4",
+          "opencv-python": "5.0.0.93",
+          "known_vulnerabilities": 0
+        },
+        "external_runtime": "FFmpeg 8.1 observed; update to patched build required. Package does not include or replace runtime.",
+        "secret_scan": "No credentials or identifying project information found",
+        "bandit": "11 Low alerts manually reviewed; subprocess calls are expected; True is not a password",
+        "limitations": [
+          "Native-library audit is not exhaustive",
+          "No Windows/Linux execution",
+          "No malicious codec exploit execution",
+          "No global runtime upgrades"
+        ],
+        "basis": "Historical audit retained for traceability, not rerun in v1.5; current security regressions do not establish dependency vulnerability clearance"
+      },
+      "windows_run_v1_4": {
+        "platform": "Windows 11, Python 3.12, NumPy 2.3, OpenCV 5.0, FFmpeg 7.0 (not the patched 8.1.x build)",
+        "smoke": "6/8 passed (7/8 with PYTHONUTF8=1)",
+        "security": "8/10 passed",
+        "failures": [
+          "test_02: cp1252 console encoding (passes with PYTHONUTF8=1)",
+          "test_07: fixed colour fit not applied",
+          "symlink test: WinError 1314, symlink creation needs privilege",
+          "replacement-file test: WinError 32, file in use on rename"
+        ],
+        "same_failures_on_v1_3_zip": true,
+        "cause": "Pre-existing Windows compatibility of unchanged scripts/tests; not introduced by v1.4 documentation"
+      }
+    },
+    "validation_date": "2026-10-22"
+  }
 }
