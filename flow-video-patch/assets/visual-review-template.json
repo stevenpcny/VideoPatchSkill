@@ -156,6 +156,41 @@
       "source_intervals_checked": [],
       "evidence": [],
       "notes": ""
+    },
+    {
+      "id": "whole_head_motion_envelope_and_all_layer_old_contours",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "generated_accessories_and_small_detail_continuity",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "local_donor_alignment_switches_and_preserved_performance",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "physical_paste_window_sampling_borders_and_pixel_format",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "neighbor_clothing_old_fingertip_motion_and_local_edit_scope",
+      "status": "not_run",
+      "source_intervals_checked": [],
+      "evidence": [],
+      "notes": ""
     }
   ],
   "check_status_values": [
@@ -172,5 +207,38 @@
     "visual_pass",
     "visual_fail"
   ],
-  "instructions": "Only actual review with matching final-file evidence permits pass. Explain every not_applicable. Not-run applicable checks keep visual review pending; unresolved failures keep it failed. Technical pass alone never means seam-free or ghost-free. This record is not an automatic detector or authorization. Record reviewer, evidence paths, frame/time intervals, people and limits in each evidence entry. Keep filled records private to the task."
+  "instructions": "Only actual review with matching final-file evidence permits pass. Explain every not_applicable. Not-run applicable checks keep visual review pending; unresolved failures keep it failed. Technical pass alone never means seam-free or ghost-free. This record is not an automatic detector or authorization. Record reviewer, evidence paths, frame/time intervals, people and limits in each evidence entry. Keep filled records private to the task.",
+  "review_regions": [],
+  "local_donors": [],
+  "user_acceptance": {
+    "status": "not_recorded",
+    "output_sha256": "",
+    "accepted_scope": [],
+    "evidence": "",
+    "does_not_override_unperformed_checks": true
+  },
+  "defect_localization": {
+    "reported_anatomical_region": null,
+    "reported_frame_numbers": null,
+    "frame_number_origin": "unconfirmed",
+    "source_frame_interval_half_open": null,
+    "same_frame_source_return_composite_evidence": [],
+    "observed_source_occluder": null,
+    "raw_return_defect_status": "not_reviewed",
+    "composite_defect_status": "not_reviewed",
+    "cause": "unconfirmed"
+  },
+  "local_alpha_edit": {
+    "base_output_sha256": null,
+    "base_performance_reference": null,
+    "frame_mapping": null,
+    "allowed_source_frame_window_half_open": null,
+    "allowed_work_pixel_region": null,
+    "changed_mask_bbox_and_frames_measured": null,
+    "full_alpha_core_measured": "not_run",
+    "outside_mask_edit_identical": "not_run",
+    "protected_preencode_rgb_comparison": "not_run",
+    "transition_window_review": "not_run",
+    "notes": "Copy/edit per task; unchanged alpha is not proof of unchanged encoded pixels or lyric sync."
+  }
 }
