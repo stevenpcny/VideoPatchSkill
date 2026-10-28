@@ -11,7 +11,7 @@
 
 ## 默认允许的处理链
 
-- 本包 scripts/flow_patch.py 的 doctor、inspect、prepare、merge，以及 scripts/fit_patch.py；本包两套测试仅用于合成素材复验。
+- 本包 scripts/flow_patch.py 的 doctor、inspect、prepare、merge，scripts/fit_patch.py，以及只读核对的 scripts/qc_tools.py；本包测试仅用于合成素材复验；新增`tests/ffmpeg_regression.sh`仅使用既有FFmpeg/ffprobe、libx264及宿主基本shell文件/字节比对，不调用额外媒体库、模型或编码器。
 - Python 解释器与标准库，以及 requirements.txt 中的 NumPy 和一种 OpenCV Python 发行包；只用于本包已有算法和本地任务数据。标准库包含网络与子进程能力，不表示允许任意网络请求或启动其他程序。
 - 可信且符合安全条件的 FFmpeg／ffprobe，本地探测、解码、裁切、缩放、抽帧、预览、封装及校验；视频输出使用 libx264，prepare 音频使用 AAC，merge 复制原音轨。白名单内的直接 FFmpeg 命令也必须保留本地输入协议限制和防覆盖，输出新文件。
 - 宿主提供的基本本地文件读写、文本检索及内置媒体预览，只限用户授权的任务文件；终端可用不代表任意命令获准。需要辅助代码时，仅可使用上列组件完成参数、抽帧或比较工作，保留代码记录，不改写主处理链或引入额外依赖。
