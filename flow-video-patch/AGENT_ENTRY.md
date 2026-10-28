@@ -13,3 +13,7 @@
 每次合成必须读[视觉验收步骤](references/verification.md)，填写[视觉验收记录](assets/visual-review-template.json)。最终编码文件须做全修补帧巡检、放大边缘/背景/遮罩检查、接点重影检查及正常速度播放。未做播放或还有接缝、重影、色偏时，交付只能标为视觉待审/未通过，不能凭解码成功称“无接缝、无重影”。
 
 当文字步骤足够表达目标时，不需要专有的 Codex API。脚本是普通命令行工具，Python输出和JSON报告可以交给任意助手继续处理。
+
+收到生成返回片后、合成前，先按[返回片贴合度预检与接缝选位](references/return-fit-assessment.md)做预检并给出"可贴／费劲／建议重刷"结论；接缝不放在脸上，放在新旧一致、不显眼的位置。
+
+多人交界或局部借用先读[对应指南](references/overlap-and-local-donors.md)。用户要求可编辑工程时，读[达芬奇工程移交](references/resolve-project-handoff.md)，连同源片、Flow返回和仍被引用的遮罩／跟踪数据交付；未实际重开或迁移的检查保留待验。

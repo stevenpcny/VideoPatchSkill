@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "status": "planned_not_generated",
+  "application": {"product": "DaVinci Resolve", "edition": "to_verify", "version": null},
+  "execution": {"method": "to_verify", "tool_review_record": null, "authorization_record": null},
+  "scope": {"source_frame_range_exclusive": null, "fps_rational": null, "editable_parameters": [], "acceptance_criteria": []},
+  "project": {"relative_path": "project.drp", "comp_relative_paths": [], "includes_media_in_project_file": false},
+  "media_files": [],
+  "media_file_entry_schema": {"relative_path": "media/flow/patch.mp4", "role": "flow_original", "sha256": null, "frame_count": null, "included": false},
+  "dependency_inventory_complete": false,
+  "all_required_media_included": false,
+  "conversion": {"exact": [], "approximate": [], "baked": [], "missing": []},
+  "path_relocation": {"method": null, "loader_paths_checked": false, "media_pool_paths_checked": false, "original_work_directory_dependency_eliminated": false},
+  "checks": {
+    "node_and_parameter_readback": "not_run",
+    "wiring_readback": "not_run",
+    "rendered_parameter_response": "not_run",
+    "default_appearance_comparison": "not_run",
+    "full_frame_mapping_and_tracking": "not_run",
+    "normal_speed_visual_review": "not_run",
+    "project_save_export": "not_run",
+    "save_reopen_in_resolve": "not_run",
+    "package_hashes": "not_run",
+    "relocated_directory_open": "not_run",
+    "recipient_environment_open": "not_run"
+  },
+  "evidence": [],
+  "limitations": []
+}
