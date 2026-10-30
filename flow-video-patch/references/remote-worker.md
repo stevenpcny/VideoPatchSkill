@@ -54,6 +54,7 @@ python scripts/remote_run.py pull job-01 patched.mp4 patched.report.json --dest 
 - 当前限制：各帧仍按顺序合成，多个补丁同帧时依次融合；4K 时每个读取器预读约多占 75 MB 内存。8K 双补丁检查导出实测约 37 s，进程（含子进程）工作集合计峰值约 5.4 GiB（相加值，含重复计算的共享页），8K 任务应预留足够内存。
 - 编译内核（可选）：见[可选编译内核](native-kernels.md)；工作机自行构建一次，`doctor` 显示是否启用。
 - 硬件编码（可选，v2.6）：`FLOW_VIDEO_ENCODER=h264_nvenc|h264_qsv|h264_amf`，质量参数仍用 `FLOW_CRF`（NVENC 的 CQ、QSV 的 global_quality、AMF 的 QP）。检查用导出（`--frames`／`--preview`）可直接使用；交付导出与 Flow 上传素材须另设 `FLOW_HW_DELIVERABLE=1`，表示已在该机用同一实片比较过它与 libx264 的画质和码率，否则拒绝运行。报告与 NOTICE 注明实际编码器；`doctor` 列出 FFmpeg 构建中可用的硬件编码器。显卡驱动许可证在该机核对。本包测试环境无显卡。使用者实测（issue #10，Windows 11、Intel Arc Pro B70）：`h264_qsv` 检查用导出在 1080p、4K 成功，但该短样本比 libx264 慢（1080p 4.78 s 对 3.60 s，4K 10.37 s 对 9.40 s），同数值 17 下 SSIM 低于 libx264、文件约小一半；8K 被该驱动的 QSV 拒绝（分辨率不受支持）。硬件编码是否提速、画质是否够用须按自己的机器和素材实测，不能默认更快。
+- 使用者 Windows 实测（v2.7，Intel Arc Pro B70 机器，libx264 CRF 17／fast、4 编码线程、4 处理线程、Rust 内核，完整导出）：真实 4K 361 帧 93 s（约 3.9 帧/秒，合计 RSS 峰值约 2.8 GiB）；真实 8K 189 帧 248 s（约 0.76 帧/秒，约 9.5 GiB）；60 秒 4K（1440 帧，补丁只在中间 120 帧）整片重编码 384 s。最后一类正是 `--copy-unpatched` 适用的情况，应优先试它和 `FLOW_ENCODE_THREADS=0`。1080p 合成样本上 GOP 复制配合 `FLOW_SEGMENTS` 2／4 进程渲染为 10.8／9.1 s、合计 RSS 1.6／2.8 GiB；进程数越多内存越高，8K 分段前先估内存。
 - 实测才能声称提速：给出同一任务在主机与工作机上的耗时对比，不按硬件参数推算。
 
 ## 后续可改进方向

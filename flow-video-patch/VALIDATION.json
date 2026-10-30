@@ -39,7 +39,8 @@
       "1080p_2min_copy_unpatched": "35.6 s -> 18.6 s",
       "4k_120_frames": "about unchanged (verification is a small share)"
     },
-    "owner_windows_report_v2_7": "issue #10: Windows 11, FFmpeg 9.0.2, Intel Arc Pro B70: QSV preview exports at 1080p/4K succeeded but were slower than libx264 on the sample, 8K rejected by the driver; 8K CPU check export about 37 s, about 5.4 GiB summed working set; VLC 3.0.24 and Resolve 21.0.4.5 played and seeked the parameter-set-switching sample; GOP fallback WinError 32 reproduced (fixed here)"
+    "owner_windows_report_v2_7": "issue #10: Windows 11, FFmpeg 9.0.2, Intel Arc Pro B70: QSV preview exports at 1080p/4K succeeded but were slower than libx264 on the sample, 8K rejected by the driver; 8K CPU check export about 37 s, about 5.4 GiB summed working set; VLC 3.0.24 and Resolve 21.0.4.5 played and seeked the parameter-set-switching sample; GOP fallback WinError 32 reproduced (fixed here)",
+    "owner_windows_report_v2_7_high_priority": "issue #10 comment (main 3b9a38d): 9/9 pass. GOP copy with 2/4 render processes and QSV (preview) with segments or GOP copy; copied frames independently SHA-256 identical, rendered GOPs frame-aligned with no patch-window drift; real 4K 361 frames 93 s, real 8K 189 frames 248 s (~9.5 GiB summed RSS), 60 s 4K full re-encode 384 s; stream-copied loop with timestamp gaps correctly rejected. Ran v2.7, so the issue #10 fix awaits #11 section B."
   },
   "limits": [
     "Check --copy-unpatched outputs in the actual player/editor before delivery",
