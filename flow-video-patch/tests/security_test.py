@@ -114,6 +114,18 @@ class Security(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     fp.encode_threads()
 
+    def test_segments_bounded(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('FLOW_SEGMENTS', None)
+            self.assertEqual(fp.segment_count(1000), 1)
+        with patch.dict(os.environ, {'FLOW_SEGMENTS': '8'}):
+            self.assertEqual(fp.segment_count(1000), 8)
+            self.assertEqual(fp.segment_count(30), 2)  # at least 12 frames per segment
+        for bad in ('0', '33', '-2', '2 -y', 'auto', ''):
+            with patch.dict(os.environ, {'FLOW_SEGMENTS': bad}):
+                with self.assertRaises(ValueError):
+                    fp.segment_count(1000)
+
     def test_fit_rejects_negative_index_and_nonfinite_parameters(self):
         script = Path(fp.__file__).with_name('fit_patch.py')
         for args in (['--patch', '-1'], ['--max-shift', 'inf'], ['--min-correlation', 'nan']):

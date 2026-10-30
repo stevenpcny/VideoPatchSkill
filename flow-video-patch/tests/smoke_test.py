@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """One-command behavioral verification with disposable, synthetic media only."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -193,6 +194,31 @@ class Smoke(unittest.TestCase):
         for method,levels,expect in (('alpha',5,ref),('multiband',2,mb)):
             expect=np.clip(expect,0,255).round().astype(np.uint8); expect[m==0]=a[m==0]
             np.testing.assert_array_equal(fp.blend(a,b,m,method,levels),expect)
+
+    def test_10_segmented_merge_matches_single(self):
+        # Second segment starts mid-return (generated frame 12) and ends on the held tail frame.
+        cfg=self.config('segmented',patches=[self.patch()])
+        single,split=self.base/'single.mp4',self.base/'split.mp4'
+        cli('merge','--config',cfg,'--output',single)
+        p=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),
+                          '--output',str(split)],env=dict(os.environ,FLOW_SEGMENTS='2'),
+                         stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        self.assertEqual(p.returncode,0,p.stderr)
+        rpt=json.loads(split.with_suffix('.report.json').read_text())
+        self.assertEqual([s['frames'] for s in rpt['command_argv']['segments']],[[0,12],[12,24]])
+        self.assertEqual(fp.probe(split)['frames'],24)
+        self.assertEqual(fp.audio_hash(self.source),fp.audio_hash(split))
+        # Separate encodes differ by coding noise only: each segmented frame is still nearest to
+        # the same frame of the single encode (the moving square makes neighbours distinct).
+        def rows(path):
+            reader=fp.Reader(path,[192,128])
+            try:
+                return [reader.get(k)[8:24].astype(float) for k in range(24)]
+            finally:
+                reader.close()
+        ref=rows(single)
+        for i,got in enumerate(rows(split)):
+            self.assertEqual(int(np.argmin([np.abs(got-r).mean() for r in ref])),i,f'frame {i}')
 
 
 if __name__=='__main__':

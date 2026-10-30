@@ -5,11 +5,12 @@ All frame intervals are zero-based [start,end). All rectangles are x,y,w,h.
 Paths in JSON are relative to that JSON. See references/parameters.md.
 """
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import contextlib
 from fractions import Fraction
 import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import queue
@@ -323,8 +324,10 @@ def rectangle(value, frame, size):
 
 
 class Reader:
-    """Sequential decoder; permits repeated indices, refuses backwards reads."""
-    def __init__(self, path, size, color=None):
+    """Sequential decoder; permits repeated indices, refuses backwards reads.
+
+    start skips earlier frames by decoded frame number (not by seeking timestamps)."""
+    def __init__(self, path, size, color=None, start=0):
         self.w, self.h = checked_size(size)
         self.color = color or stream_color(path)
         self.log = tempfile.TemporaryFile()
@@ -332,13 +335,17 @@ class Reader:
         # State the range on both sides: older FFmpeg (e.g. 6.1) otherwise squeezes full-range
         # (yuvj) input into limited range when converting to yuv444p.
         rng = 'pc' if self.color['range'] == 'pc' else 'tv'
-        convert = (['-pix_fmt', fmt] if self.color['rgb_input'] else
-                   ['-vf', f'scale=in_range={rng}:out_range={rng},format={fmt}'])
+        require(type(start) is int and start >= 0, 'Invalid reader start frame')
+        chain = [f'select=gte(n\\,{start})'] if start else []
+        if self.color['rgb_input']:
+            convert = (['-vf', ','.join(chain)] if chain else [])+['-pix_fmt', fmt]
+        else:
+            convert = ['-vf', ','.join(chain+[f'scale=in_range={rng}:out_range={rng},format={fmt}'])]
         self.p = subprocess.Popen([FFMPEG, '-v', 'error', '-noautorotate', *file_input(path),
                                    '-map', '0:v:0', '-an', '-fps_mode', 'passthrough',
                                    *convert, '-f', 'rawvideo', '-'],
                                   stdout=subprocess.PIPE, stderr=self.log)
-        self.index = -1
+        self.index = start-1
         self.last = None
         # Decode ahead in a thread; each frame gets its own buffer, so order and bytes are unchanged.
         self.frames = queue.Queue(PREFETCH)
@@ -421,7 +428,11 @@ class Reader:
 
     def close(self):
         self.stopping.set()
-        stop_process(self.p)
+        # A decoder with unread frames is blocked writing to the pipe and would sit out the
+        # terminate timeout (5 s); its output is no longer wanted, so stop it at once.
+        if self.p.poll() is None:
+            self.p.kill()
+        self.p.wait(timeout=5)
         self.thread.join(timeout=10)
         self.p.stdout.close()
         self.log.close()
@@ -627,7 +638,15 @@ def encode_threads():
     return value
 
 
-def encoder(path, size, fps, source, color, audio_filter=None):
+def segment_count(frames):
+    # Opt-in: 1 (default) keeps the single-encoder bitstream; segments shorter than 12 frames are merged.
+    value = os.environ.get('FLOW_SEGMENTS', '1')
+    # 32 stays below the 61-process limit of Windows process pools.
+    require(value.isdigit() and 1 <= int(value) <= 32, 'FLOW_SEGMENTS must be 1 to 32')
+    return max(1, min(int(value), frames//12))
+
+
+def encoder(path, size, fps, source, color, audio_filter=None, audio=True):
     require(size[0] % 2 == 0 and size[1] % 2 == 0, 'Output dimensions must be even for yuv420p')
     # Frames arrive as yuv420p already converted with the source matrix; tag via bitstream
     # metadata, because output-side -colorspace flags make FFmpeg insert a lossy conversion.
@@ -636,19 +655,23 @@ def encoder(path, size, fps, source, color, audio_filter=None):
             f":matrix_coefficients={MATRIX_CODES[color['matrix_tag']]}"
             f":video_full_range_flag={int(color['range'] == 'pc')}")
     cmd = [FFMPEG, '-v', 'error', '-n', '-f', 'rawvideo', '-pix_fmt', 'yuv420p',
-           '-s', f'{size[0]}x{size[1]}', '-r', fps, '-protocol_whitelist', 'pipe', '-i', 'pipe:0', *file_input(source),
-           '-map', '0:v:0', '-map', '1:a:0?', '-c:v', 'libx264', '-threads', encode_threads(),
+           '-s', f'{size[0]}x{size[1]}', '-r', fps, '-protocol_whitelist', 'pipe', '-i', 'pipe:0',
+           *(file_input(source) if audio else []),
+           '-map', '0:v:0', *(['-map', '1:a:0?'] if audio else ['-an']),
+           '-c:v', 'libx264', '-threads', encode_threads(),
            '-crf', '17', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-bsf:v', tags]
-    if audio_filter is None:
+    if audio and audio_filter is None:
         cmd += ['-c:a', 'copy']
-    else:
+    elif audio:
         cmd += ['-af', audio_filter, '-c:a', 'aac', '-b:a', '192k']
     return cmd+['-movflags', '+faststart', str(path)]
 
 
-def process(cfg, info, mode, out, plan):
+def process(cfg, info, mode, out, plan, span=None):
+    """Encode one output; span=(first,last) makes a video-only merge segment of those frames."""
     with contextlib.ExitStack() as stack:
-        source = Reader(cfg['source'], info['size'], info['color']); stack.callback(source.close)
+        start = plan['first'] if mode == 'prepare' else (span or (0,))[0]
+        source = Reader(cfg['source'], info['size'], info['color'], start); stack.callback(source.close)
         if mode == 'prepare':
             p = cfg['prepare']; size = plan['size']
             fps = Fraction(info['fps']); first, last = plan['first'], plan['last']
@@ -656,13 +679,17 @@ def process(cfg, info, mode, out, plan):
                   f'apad,atrim=duration={float((last-first)/fps)}')
             cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], af)
         else:
-            plans = plan; size = info['size']; first, last = 0, info['frames']
-            readers = [Reader(p['generated'], q['info']['size'], q['info']['color'])
-                       for p,q in zip(cfg['patches'],plans)]
-            for reader in readers:
-                stack.callback(reader.close)
-            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'])
-            plan = {'size': size, 'frames': last, 'audio': info['audio']}
+            plans = plan; size = info['size']; first, last = span or (0, info['frames'])
+            readers = []
+            for p,q in zip(cfg['patches'],plans):
+                # Each return is read from the first generated frame this span uses.
+                used = [j for k,j in enumerate(q['indices'])
+                        if j is not None and first <= p['target'][0]+k < last]
+                readers.append(Reader(p['generated'], q['info']['size'], q['info']['color'],
+                                      min(used, default=0)))
+                stack.callback(readers[-1].close)
+            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], audio=span is None)
+            plan = {'size': size, 'frames': info['frames'], 'audio': info['audio']}
         log = stack.enter_context(tempfile.TemporaryFile())
         enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=log)
         out_frames = FrameWriter(enc.stdin)
@@ -757,6 +784,47 @@ def process(cfg, info, mode, out, plan):
         return plan, cmd
 
 
+def _segment(job):
+    cfg, info, plans, span, path = job
+    return process(cfg, info, 'merge', Path(path), plans, span)[1]
+
+
+def merge_segmented(cfg, info, plans, out, count):
+    """Merge frame ranges in parallel processes, join without re-encoding, then copy audio once.
+
+    Each segment is its own libx264 encode starting on a keyframe, so the bitstream differs from a
+    single encode; pixels sent to the encoder are identical. The joined file is verified as a whole."""
+    frames = info['frames']
+    bounds = [frames*k//count for k in range(count+1)]
+    spans = list(zip(bounds, bounds[1:]))
+    work = out.parent/'segments'  # the output name always has a media suffix, so no clash
+    work.mkdir()
+    parts = [work/f'part{k:02d}.mp4' for k in range(count)]
+    listing = work/'parts.txt'
+    listing.write_text(''.join(f"file '{part.name}'\n" for part in parts), encoding='utf-8')
+    # Share the cores between segment processes unless the user set a thread count.
+    saved = os.environ.get('FLOW_PROCESS_THREADS')
+    if saved in (None, '0'):
+        os.environ['FLOW_PROCESS_THREADS'] = str(max(1, (os.cpu_count() or 1)//count))
+    try:
+        with ProcessPoolExecutor(count, mp_context=multiprocessing.get_context('spawn')) as pool:
+            commands = list(pool.map(_segment, [(cfg, info, plans, s, str(p)) for s, p in zip(spans, parts)]))
+    finally:
+        if saved is None:
+            os.environ.pop('FLOW_PROCESS_THREADS', None)
+        else:
+            os.environ['FLOW_PROCESS_THREADS'] = saved
+    join = [FFMPEG, '-v', 'error', '-n', '-protocol_whitelist', 'file', '-f', 'concat', '-i', str(listing),
+            *file_input(cfg['source']), '-map', '0:v:0', '-map', '1:a:0?', '-c', 'copy',
+            '-movflags', '+faststart', str(out)]
+    run(join)
+    for part in parts:
+        part.unlink()
+    plan = {'size': info['size'], 'frames': frames, 'audio': info['audio']}
+    return plan, {'segments': [{'frames': list(s), 'command_argv': c} for s, c in zip(spans, commands)],
+                  'join_argv': join}
+
+
 def verify(source, output, expected, copy_audio):
     # Independent full reads of the output run side by side; every check still runs.
     with ThreadPoolExecutor(4) as pool:
@@ -793,7 +861,8 @@ def main():
                           'python':os.sys.version,'opencv':cv2.__version__, 'numpy':np.__version__,
                           'ffmpeg':run([FFMPEG,'-version']).decode().splitlines()[0],
                           'ffprobe':run([FFPROBE,'-version']).decode().splitlines()[0],
-                          'libx264':True,'encode_threads':encode_threads()},ensure_ascii=False,indent=2)); return
+                          'libx264':True,'encode_threads':encode_threads(),
+                          'segments':segment_count(1 << 30)},ensure_ascii=False,indent=2)); return
     if args.mode == 'inspect':
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
@@ -811,7 +880,11 @@ def main():
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.flow-patch-',dir=output.parent) as tmp:
         temp = Path(tmp)/output.name
-        plan,cmd = process(cfg,info,args.mode,temp,plan)
+        count = segment_count(info['frames']) if args.mode == 'merge' else 1
+        if count > 1:
+            plan,cmd = merge_segmented(cfg,info,plan,temp,count)
+        else:
+            plan,cmd = process(cfg,info,args.mode,temp,plan)
         expected = dict(plan,fps=info['fps'])
         result = verify(cfg['source'],temp,expected,args.mode=='merge')
         result['output'].update(plan)
