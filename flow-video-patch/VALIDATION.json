@@ -7,12 +7,12 @@
     "tests: color_pipeline_test_09 outside-support luma, security_test encode-thread bounds",
     "SKILL.md entry for remote worker; SECURITY.md env vars"
   ],
-  "processing_scripts": "All scripts, tests and requirements byte-identical to v2.2",
+  "processing_scripts": "flow_patch.py, security_test.py and color_pipeline_test.py changed; fit_patch.py, qc_tools.py, other tests and requirements byte-identical to v2.3",
   "tool_policy_scope": "Package version only; no new tool/runtime/codec/service authorization",
   "upstream": {
-    "main_commit": "275c59d",
-    "pending_v2_0_commit": "e7a6d2e740b544bbe1a2778dd8b9386cf7ba22f7",
-    "status": "pending PR, not released on main"
+    "main_commit": "59f8536",
+    "release_commit": "4be5979",
+    "status": "released on main (merged PR #4)"
   },
   "current_static_verification": {
     "date": "2026-10-29",
