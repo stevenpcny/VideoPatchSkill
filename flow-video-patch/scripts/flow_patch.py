@@ -421,15 +421,31 @@ _PASSES = {}
 
 def decode_pass(path, strict=False):
     """One full decode giving per-frame timestamps (seconds, demuxer time base, no rounding) and
-    128-bit murmur3 hashes. strict stops at the first decode error (-xerror), as output checks need."""
-    lines = run([FFMPEG, '-v', 'error', *(['-xerror'] if strict else []), *file_input(path), '-map', '0:v:0',
-                 '-fps_mode', 'passthrough', '-enc_time_base:v', 'demux', '-f', 'framehash', '-hash', 'murmur3',
-                 '-']).decode().splitlines()
+    128-bit murmur3 hashes. strict stops at the first decode error (-xerror), as output checks need,
+    and also decodes every audio stream: a payload hash alone does not prove the audio decodes."""
+    argv = [FFMPEG, '-v', 'error', *(['-xerror'] if strict else []), *file_input(path), '-map', '0:v:0',
+            *(['-map', '0:a?'] if strict else []), '-fps_mode', 'passthrough', '-enc_time_base:v', 'demux',
+            '-f', 'framehash', '-hash', 'murmur3', '-']
+    done = subprocess.run(argv, capture_output=True, timeout=float(os.environ.get('FLOW_COMMAND_TIMEOUT', '600')))
+    if done.returncode:
+        raise subprocess.CalledProcessError(done.returncode, argv, done.stdout, done.stderr)
+    # Some FFmpeg builds (6.1) report a failed decoder thread but still exit 0 under -xerror.
+    require(not (strict and done.stderr.strip()),
+            'Decode errors: '+done.stderr.decode(errors='replace').strip()[-1000:])
+    lines = done.stdout.decode().splitlines()
     tb = next(Fraction(line.split(':', 1)[1].strip()) for line in lines if line.startswith('#tb 0:'))
     rows = [[x.strip() for x in line.split(',')] for line in lines if line and not line.startswith('#')]
+    rows = [r for r in rows if r[0] == '0']  # output stream 0 is the video
     result = ([float(int(r[2])*tb) for r in rows], [r[5] for r in rows])
     _PASSES[local_media(path)] = result
     return result
+
+
+def forget(path):
+    """Drop this process's cached probe and decoding pass of a file that is about to be replaced."""
+    key = str(Path(path).expanduser().resolve())
+    _PROBED.pop(key, None)
+    _PASSES.pop(key, None)
 
 
 def probe(path, strict=False):
@@ -1292,12 +1308,14 @@ def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, 
         raise CopyFallback(f'joined stream failed its decode/timing check ({e})') from e
     if joined['frames'] != frames:
         raise CopyFallback('joined stream has a different frame count')
-    probed = Future(); probed.set_result(joined)
-    _PROBED[local_media(out)] = probed  # verify() reuses this full probe of the unchanged file
     source_md5, output_md5 = source_md5.result(), frame_hashes(out)
     copied = [i for a, b, render in pieces if not render for i in range(a, b)]
     if len(output_md5) != frames or any(source_md5[i] != output_md5[i] for i in copied):
         raise CopyFallback('copied frames do not decode identically to the source')
+    # Only a joined file that passed every check is reused by verify(); a fallback render at the
+    # same path must get its own strict decode (issue #15).
+    probed = Future(); probed.set_result(joined)
+    _PROBED[local_media(out)] = probed
     for f in work.iterdir():
         f.unlink()
     work.rmdir()
@@ -1507,6 +1525,7 @@ def main():
                     reason = (str(e) if isinstance(e, CopyFallback) else
                               'FFmpeg could not cut or join the source GOPs')
                     shutil.rmtree(temp.parent/'pieces', ignore_errors=True)
+                    forget(temp)
                     with contextlib.suppress(FileNotFoundError):
                         temp.unlink()
             if reason is not None:

@@ -3,9 +3,10 @@
   "update_scope": [
     "issue #13: flow_patch.py regrid stream-copies a millisecond-time-base source (e.g. MKV) to MP4/MOV with every video timestamp snapped to n/fps (setts), refuses frames more than a quarter frame off the grid, and verifies strict probe, per-frame murmur3 hashes and audio payload against the source; CFR check unchanged",
     "issue #12: tools/release.py writes LF on every OS so a Windows rebuild gives the same ZIP bytes",
-    "NOTICE when --copy-unpatched copies no frames (issue #11 D)"
+    "NOTICE when --copy-unpatched copies no frames (issue #11 D)",
+    "issues #14/#15 (v2.8 regressions): strict output decode also decodes all audio and fails on any FFmpeg error output (6.1 exits 0 under -xerror when a decoder thread fails); a joined --copy-unpatched file is cached for verify() only after every check passes, and a fallback clears the cache so the full render gets its own strict decode"
   ],
-  "processing_scripts": "flow_patch.py changed (new regrid mode, one notice); merge outputs unchanged",
+  "processing_scripts": "flow_patch.py changed (regrid mode, zero-copy notice, stricter output checks); valid merge outputs unchanged",
   "tool_policy_scope": "Package version only",
   "upstream": {
     "main_commit": "2a61562",
@@ -25,7 +26,7 @@
     "linux_local": {
       "platform": "Linux, 4 cores, FFmpeg 6.1.1",
       "per_kernel_mode": {
-        "smoke_test": "22/22",
+        "smoke_test": "24/24",
         "security_test": "16/16",
         "qc_tools_test": "6/6",
         "color_pipeline_test": "9/9",
@@ -34,7 +35,8 @@
       }
     },
     "regrid": "23.976 fps H.264 with B-frames in MKV (1 ms time base), FLAC audio: plain -c copy MP4 fails CFR (avg 240000/10009-type rate); regrid output passes strict probe, frames and audio payload identical, max shift 0.5 ms, eligible for --copy-unpatched",
-    "owner_windows_report_v2_8": "issue #11 (main 2a61562): A1-A3, B1, B3, C, D pass; A4 (release ZIP not reproducible on Windows) -> #12 fixed here; B2 (MKV->MP4 remux fails CFR) -> #13 fixed here with regrid; precheck on the real return gave regenerate (8/8 registration failures), human agreement not recorded; E/F/G not run"
+    "owner_windows_report_v2_8": "issue #11 (main 2a61562): A1-A3, B1, B3, C, D pass; A4 (release ZIP not reproducible on Windows) -> #12 fixed here; B2 (MKV->MP4 remux fails CFR) -> #13 fixed here with regrid; precheck on the real return gave regenerate (8/8 registration failures), human agreement not recorded; E/F/G not run; workflow audit on 2a61562 found #14 and #15, fixed here",
+    "regressions": "test_23 (AAC packet payload garbled, video intact) and test_24 (forced copied-frame mismatch, then a non-video fallback render, no audio) fail on v2.8 and pass here"
   },
   "limits": [
     "Check --copy-unpatched outputs in the actual player/editor before delivery",

@@ -462,6 +462,50 @@ class Smoke(unittest.TestCase):
         self.assertNotIn('not used',r.stderr)
         self.assertGreater(json.loads(merged.with_suffix('.report.json').read_text(encoding='utf-8'))['copy_unpatched']['copied_frames'],0)
 
+    def gop_source(self,name,audio=True):
+        src=self.base/name
+        sound=['-f','lavfi','-i','sine=d=2','-c:a','aac','-shortest'] if audio else []
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=192x128:r=24:d=2',*sound,'-c:v','libx264',
+                '-x264-params','keyint=12:min-keyint=12:scenecut=0:bframes=3','-pix_fmt','yuv420p',src])
+        return src
+
+    def gop_config(self,name,src):
+        p=self.patch(generated=str(self.generated),target=[14,20],frame_map=list(range(6)),crop=[0,0,96,128],protect=None)
+        return self.config(name,source=str(src),source_size=[192,128],patches=[p])
+
+    def test_23_corrupt_audio_is_rejected(self):
+        # issue #14: video intact, one AAC packet's payload garbled; the output check must decode audio too.
+        src=self.gop_source('bad-audio.mp4')
+        pk=json.loads(fp.run([fp.FFPROBE,'-v','error','-select_streams','a:0','-show_entries','packet=pos,size',
+                              '-of','json',src]))['packets'][20]
+        with open(src,'r+b') as f:
+            f.seek(int(pk['pos'])); f.write(bytes((i*37+11)%256 for i in range(int(pk['size']))))
+        self.assertEqual(fp.decode_pass(src)[0][:1],[0.0])  # the video alone still decodes
+        out=self.base/'bad-audio-out.mp4'
+        r=cli('merge','--config',self.gop_config('bad-audio',src),'--output',out,ok=False)
+        self.assertIn('Decode errors',r.stderr)
+        self.assertFalse(out.exists() or out.with_suffix('.report.json').exists())
+
+    def test_24_fallback_render_gets_its_own_strict_check(self):
+        # issue #15: after a late --copy-unpatched fallback, verify() must not reuse the joined file's checks.
+        # Two injected faults: the copied-frame comparison fails, and the fallback render is not a video.
+        src=self.gop_source('fallback.mp4',audio=False)  # no audio hash to catch the bad file instead
+        cfg=self.gop_config('fallback',src); out=self.base/'fallback-out.mp4'
+        code=("import sys; sys.path.insert(0, sys.argv[1]); import flow_patch as fp\n"
+              "fp.frame_hashes = lambda path: [str(path)] * 48\n"
+              "real = fp.process\n"
+              "def broken(cfg, info, mode, out, *a, **k):\n"
+              "    r = real(cfg, info, mode, out, *a, **k)\n"
+              "    if 'pieces' not in str(out): open(out, 'wb').write(b'not a video' * 4)\n"
+              "    return r\n"
+              "fp.process = broken; fp.merge_segmented = lambda *a, **k: (_ for _ in ()).throw(AssertionError)\n"
+              "sys.argv = sys.argv[1:2] + sys.argv[2:]; fp.main()")
+        r=subprocess.run([sys.executable,'-c',code,str(ROOT/'scripts'),'merge','--config',str(cfg),'--output',str(out),
+                          '--copy-unpatched'],capture_output=True,text=True,encoding='utf-8',env=dict(os.environ,FLOW_SEGMENTS='1'))
+        self.assertNotEqual(r.returncode,0,r.stdout)
+        self.assertIn('copied frames do not decode identically',r.stderr)
+        self.assertFalse(out.exists() or out.with_suffix('.report.json').exists())
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
