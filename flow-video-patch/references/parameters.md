@@ -9,7 +9,7 @@
 - `output_size`/`work_size`为局部画布尺寸。蒙块、贴回matte、protect、fit_exclude在局部画布坐标中。
 - 可变几何支持常量向量或`[{"frame":0,"value":[...]}, ...]`，frame始终为**绝对源帧号**，不是局部片段号。关键帧之间线性插值，前后沿用端值；矩形最终四舍五入成整数。突变/遮挡需补关键帧。
 - 裁切宽高比须与输出/工作尺寸在0.5%内一致，不加隐式黑边或拉伸。上传蒙块可小于贴回范围，两者职责不同。
-- 编码为libx264、8位yuv420p，默认CRF17、preset fast，可用环境变量 `FLOW_CRF`（0–51）与 `FLOW_X264_PRESET`（ultrafast…veryslow）调整，实际值写入报告命令；同一任务的候选比较保持同一设置。实际预处理为BGR8。高位深/HDR不走此路线。最终尺寸须是偶数。
+- 编码默认libx264（`FLOW_VIDEO_ENCODER` 可选硬件 H.264 编码器，交付须 `FLOW_HW_DELIVERABLE=1`，见[局域网工作机执行](remote-worker.md)）、8位yuv420p，默认CRF17、preset fast，可用环境变量 `FLOW_CRF`（0–51）与 `FLOW_X264_PRESET`（ultrafast…veryslow）调整，实际值写入报告命令；同一任务的候选比较保持同一设置。实际预处理为BGR8。高位深/HDR不走此路线。最终尺寸须是偶数。
 
 ## prepare
 

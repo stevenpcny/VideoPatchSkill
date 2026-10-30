@@ -1,8 +1,8 @@
 # Flow 视频局部修补技能包
 
-本机版 **v2.5**：处理提速（完整导出与 v2.4 逐字节相同）、检查用导出 `merge --frames`／`--preview`、可选分段合成、旋转／缩放配准、接缝量化检查与三平台 CI。各版本改动见[版本记录](CHANGELOG.md)。历史同号版本属于不同分支，不能只按 v1.8 数字判断是否含色彩修复。
+本机版 **v2.6**：在 v2.5（提速、检查用导出、分段合成、旋转／缩放配准、接缝量化、三平台 CI）基础上新增可选 Rust 编译内核、可选硬件编码与远程执行脚本 `remote_run.py`。各版本改动见[版本记录](CHANGELOG.md)。历史同号版本属于不同分支，不能只按 v1.8 数字判断是否含色彩修复。
 
-版本：2.5。供Codex及其他能读取文件、执行Python命令的AI助手在内部协作中使用。
+版本：2.6。供Codex及其他能读取文件、执行Python命令的AI助手在内部协作中使用。
 
 本包包含技能入口、普通命令行脚本、中文提示词、假设示例、通用参数模板和合成媒体测试代码；不包含真实项目案例、人物资料、媒体、模型、桌面软件或第三方运行时。
 
@@ -18,6 +18,7 @@ python tests/smoke_test.py
 python tests/security_test.py
 python tests/qc_tools_test.py
 python tests/color_pipeline_test.py
+python tests/remote_run_test.py
 sh tests/ffmpeg_regression.sh
 ```
 

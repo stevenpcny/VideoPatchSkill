@@ -7,6 +7,7 @@ Paths in JSON are relative to that JSON. See references/parameters.md.
 import argparse
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import contextlib
+import ctypes
 from fractions import Fraction
 import hashlib
 import json
@@ -165,8 +166,12 @@ def _yuv_to_bgr(y, u, v, color):
 
 def yuv_to_bgr(y, u, v, color):
     out = np.empty(y.shape+(3,), np.uint8)
+    k = kernels()
     def work(a, b):
-        out[a:b] = _yuv_to_bgr(y[a:b], u[a:b], v[a:b], color)
+        if k:
+            k.yuv_to_bgr(y[a:b], u[a:b], v[a:b], out[a:b], color)
+        else:
+            out[a:b] = _yuv_to_bgr(y[a:b], u[a:b], v[a:b], color)
     in_bands(y.shape[0], work)
     return out
 
@@ -183,6 +188,148 @@ def _bgr_to_yuv420(bgr, color):
     u = (u[0::2, 0::2]+u[1::2, 0::2]+u[0::2, 1::2]+u[1::2, 1::2])/4+128
     v = (v[0::2, 0::2]+v[1::2, 0::2]+v[0::2, 1::2]+v[1::2, 1::2])/4+128
     return (np.clip(np.rint(c), 0, 255).astype(np.uint8) for c in (y, u, v))
+
+
+class NativeKernels:
+    """Optional Rust kernels (native/, standard library only), called through ctypes.
+
+    ctypes releases the GIL, so in_bands still spreads the rows over threads."""
+    ABI = 1
+
+    def __init__(self, path):
+        self.lib = ctypes.CDLL(str(path))
+        self.lib.fk_abi_version.restype = ctypes.c_uint32
+        require(self.lib.fk_abi_version() == self.ABI, 'Native kernel ABI mismatch; rebuild native/')
+        P, S, N, F = ctypes.c_void_p, ctypes.c_ssize_t, ctypes.c_size_t, ctypes.c_double
+        sig = {'fk_yuv_to_bgr': [P, S]*4+[N, N, F, F, ctypes.c_int],
+               'fk_bgr_to_yuv420': [P, S]*4+[N, N, F, F, ctypes.c_int],
+               'fk_chroma_avg': [P, S]*2+[N, N], 'fk_alpha': [P, S]*4+[N, N],
+               'fk_level': [P, S]*7+[N, N], 'fk_finish': [P, S]*4+[N, N],
+               'fk_diff64': [P, S]*3+[N, N], 'fk_apply64': [P, S]*4+[N, N]}
+        for name, args in sig.items():
+            getattr(self.lib, name).argtypes, getattr(self.lib, name).restype = args, None
+
+    @staticmethod
+    def arg(a, dtype, channels=1):
+        """Base pointer and row stride (elements) of a row-major view with packed pixels."""
+        require(a.dtype == dtype and a.ndim == (2 if channels == 1 else 3), 'Native kernel array type')
+        item = a.itemsize
+        packed = a.strides[-1] == item and (channels == 1 or a.strides[1] == channels*item)
+        require(packed and a.strides[0] % item == 0, 'Native kernel needs packed rows')
+        return [a.ctypes.data, a.strides[0]//item]
+
+    def yuv_to_bgr(self, y, u, v, out, color):
+        kr, kb = KR_KB[color['matrix']]
+        u8 = np.uint8
+        self.lib.fk_yuv_to_bgr(*self.arg(y, u8), *self.arg(u, u8), *self.arg(v, u8), *self.arg(out, u8, 3),
+                               y.shape[1], y.shape[0], kr, kb, int(color['range'] == 'tv'))
+
+    def bgr_to_yuv420(self, bgr, Y, U, V, color):
+        kr, kb = KR_KB[color['matrix']]
+        u8 = np.uint8
+        self.lib.fk_bgr_to_yuv420(*self.arg(bgr, u8, 3), *self.arg(Y, u8), *self.arg(U, u8), *self.arg(V, u8),
+                                  bgr.shape[1], bgr.shape[0], kr, kb, int(color['range'] == 'tv'))
+
+    def chroma_avg(self, src, dst):
+        self.lib.fk_chroma_avg(*self.arg(src, np.uint8), *self.arg(dst, np.uint8), src.shape[1], src.shape[0])
+
+    def alpha(self, o, p, m, out):
+        self.lib.fk_alpha(*self.arg(o, np.uint8, 3), *self.arg(p, np.uint8, 3), *self.arg(m, np.float32),
+                          *self.arg(out, np.float32, 3), m.shape[1], m.shape[0])
+
+    def level(self, ga, ua, gb, ub, uo, gm, out):
+        f = np.float32
+        self.lib.fk_level(*self.arg(ga, f, 3), *self.arg(ua, f, 3), *self.arg(gb, f, 3), *self.arg(ub, f, 3),
+                          *self.arg(uo, f, 3), *self.arg(gm, f), *self.arg(out, f, 3), gm.shape[1], gm.shape[0])
+
+    def finish(self, v, m, o, res):
+        self.lib.fk_finish(*self.arg(v, np.float32, 3), *self.arg(m, np.float32), *self.arg(o, np.uint8, 3),
+                           *self.arg(res, np.uint8, 3), m.shape[1], m.shape[0])
+
+    def diff64(self, a, b, out):
+        self.lib.fk_diff64(*self.arg(a, np.uint8, 3), *self.arg(b, np.uint8, 3), *self.arg(out, np.float64, 3),
+                           a.shape[1], a.shape[0])
+
+    def apply64(self, roi, d, support, out):
+        self.lib.fk_apply64(*self.arg(roi, np.uint8, 3), *self.arg(d, np.float64, 3),
+                            *self.arg(support.view(np.uint8), np.uint8), *self.arg(out, np.uint8, 3),
+                            roi.shape[1], roi.shape[0])
+
+
+NATIVE_DIR = Path(__file__).resolve().parent.parent/'native'
+_KERNELS = []
+_KERNELS_LOCK = threading.Lock()
+
+
+def native_library():
+    name = {'win32': 'flow_kernels.dll', 'darwin': 'libflow_kernels.dylib'}.get(sys.platform,
+                                                                                'libflow_kernels.so')
+    return NATIVE_DIR/'target'/'release'/name
+
+
+def kernels():
+    """Native kernels when built and verified bit-identical here, else None (NumPy paths).
+
+    FLOW_KERNELS: auto (default, use if built), native (require), numpy (never)."""
+    with _KERNELS_LOCK:
+        if not _KERNELS:
+            _init_kernels()
+    return _KERNELS[0]
+
+
+def _init_kernels():
+    if not _KERNELS:
+        mode = os.environ.get('FLOW_KERNELS', 'auto')
+        require(mode in ('auto', 'native', 'numpy'), 'FLOW_KERNELS must be auto, native or numpy')
+        path = native_library()
+        if mode == 'numpy' or not path.is_file():
+            require(mode != 'native', f'FLOW_KERNELS=native but {path.name} is not built; see references/native-kernels.md')
+            _KERNELS.append(None)
+        else:
+            k = NativeKernels(path)
+            native_self_check(k)
+            _KERNELS.append(k)
+
+
+def native_self_check(k):
+    """Refuse a library whose results differ from the NumPy expressions by a single bit."""
+    rng = np.random.default_rng(1)
+    h, w = 34, 46
+    u8 = lambda *s: rng.integers(0, 256, s, dtype=np.uint8)
+    f32 = lambda *s: (rng.random(s, np.float32)*300-20).astype(np.float32)
+    planes, bgr = [u8(h, w) for _ in range(3)], u8(h, w, 3)
+    m = rng.random((h, w), np.float32); m[::5] = 0; m[1::7] = 1
+    for matrix in ('bt709', 'bt601'):
+        for rng_name in ('tv', 'pc'):
+            color = {'matrix': matrix, 'range': rng_name}
+            out = np.empty((h, w, 3), np.uint8); k.yuv_to_bgr(*planes, out, color)
+            Y, U, V = np.empty((h, w), np.uint8), np.empty((h//2, w//2), np.uint8), np.empty((h//2, w//2), np.uint8)
+            k.bgr_to_yuv420(bgr, Y, U, V, color)
+            ref = list(_bgr_to_yuv420(bgr, color))
+            ok = (np.array_equal(out, _yuv_to_bgr(*planes, color)) and
+                  all(np.array_equal(x, r) for x, r in zip((Y, U, V), ref)))
+            require(ok, 'Native colour kernels differ from NumPy; rebuild or set FLOW_KERNELS=numpy')
+    c = planes[1].astype(np.uint16); s = c[0::2, 0::2]+c[1::2, 0::2]+c[0::2, 1::2]+c[1::2, 1::2]
+    q, r = s >> 2, s & 3
+    avg = np.empty((h//2, w//2), np.uint8); k.chroma_avg(planes[1], avg)
+    o, p = u8(h, w, 3), u8(h, w, 3)
+    al = np.empty((h, w, 3), np.float32); k.alpha(o, p, m, al)
+    ga, ua, gb, ub, uo = (f32(h, w, 3) for _ in range(5))
+    lv = np.empty((h, w, 3), np.float32); k.level(ga, ua, gb, ub, uo, m, lv)
+    mm = m[:, :, None]
+    fin = np.empty((h, w, 3), np.uint8); k.finish(ga, m, o, fin)
+    ref_fin = np.clip(ga, 0, 255).round().astype(np.uint8); ref_fin[m == 0] = o[m == 0]
+    d64 = np.empty((h, w, 3), float); k.diff64(o, p, d64)
+    delta = rng.normal(0, 40, (h, w, 3)); sup = m > .3
+    ap = np.empty((h, w, 3), np.uint8); k.apply64(o, delta, sup, ap)
+    dd = delta.copy(); dd[~sup] = 0
+    checks = [(avg, q+((r > 2) | ((r == 2) & (q & 1 == 1)))),
+              (al, o.astype(np.float32)*(1-mm)+p.astype(np.float32)*mm),
+              (lv, uo+(ga-ua)*(1-mm)+(gb-ub)*mm), (fin, ref_fin),
+              (d64, o.astype(float)-p.astype(float)),
+              (ap, np.clip(o.astype(float)+dd, 0, 255).round().astype(np.uint8))]
+    require(all(np.array_equal(a, b) for a, b in checks),
+            'Native blend kernels differ from NumPy; rebuild or set FLOW_KERNELS=numpy')
 
 
 PREFETCH = 3
@@ -224,8 +371,12 @@ def planes420(buf, w, h):
 def bgr_to_yuv420(bgr, color):
     h, w = bgr.shape[:2]
     buf, Y, U, V = planes420(bytearray(h*w*3//2), w, h)
+    k = kernels()
     def work(a, b):
-        Y[a:b], U[a//2:b//2], V[a//2:b//2] = _bgr_to_yuv420(bgr[a:b], color)
+        if k:
+            k.bgr_to_yuv420(bgr[a:b], Y[a:b], U[a//2:b//2], V[a//2:b//2], color)
+        else:
+            Y[a:b], U[a//2:b//2], V[a//2:b//2] = _bgr_to_yuv420(bgr[a:b], color)
     in_bands(h, work)
     return buf
 
@@ -467,9 +618,13 @@ class Reader:
             return planes420(bgr_to_yuv420(self.raw, self.color), self.w, self.h)
         buf, Y, U, V = planes420(bytearray(self.w*self.h*3//2), self.w, self.h)
         y, u, v = self.raw
+        k = kernels()
         def work(a, b):
             Y[a:b] = y[a:b]
             for src, dst in ((u, U), (v, V)):
+                if k:
+                    k.chroma_avg(src[a:b], dst[a//2:b//2])
+                    continue
                 c = src[a:b].astype(np.uint16)
                 s = c[0::2, 0::2]+c[1::2, 0::2]+c[0::2, 1::2]+c[1::2, 1::2]
                 # Integer form of rint(s/4): ties (remainder 2) go to the even quotient.
@@ -536,7 +691,10 @@ def blend(original, patch, m, method, levels):
     # OpenCV's pyramid calls are already multithreaded.
     out = np.empty(original.shape, np.float32)
     if method == 'alpha':
+        k = kernels()
         def work(a, b):
+            if k:
+                return k.alpha(original[a:b], patch[a:b], m[a:b], out[a:b])
             mm = m[a:b, :, None]
             out[a:b] = original[a:b].astype(np.float32)*(1-mm)+patch[a:b].astype(np.float32)*mm
         in_bands(m.shape[0], work)
@@ -553,6 +711,9 @@ def blend(original, patch, m, method, levels):
             ua, ub, uo = (cv2.pyrUp(v, dstsize=size) for v in (ga[k+1], gb[k+1], level))
             level = out if k == 0 else np.empty(ga[k].shape, np.float32)
             def work(a, b, k=k, ua=ua, ub=ub, uo=uo, level=level):
+                if kernels():
+                    return kernels().level(ga[k][a:b], ua[a:b], gb[k][a:b], ub[a:b], uo[a:b],
+                                           gm[k][a:b], level[a:b])
                 mm = gm[k][a:b, :, None]
                 la = ga[k][a:b]-ua[a:b]
                 lb = gb[k][a:b]-ub[a:b]
@@ -561,6 +722,8 @@ def blend(original, patch, m, method, levels):
     # Never let pyramid bleed change protected or out-of-support pixels.
     result = np.empty(original.shape, np.uint8)
     def finish(a, b):
+        if kernels():
+            return kernels().finish(out[a:b], m[a:b], original[a:b], result[a:b])
         result[a:b] = np.clip(out[a:b], 0, 255).round().astype(np.uint8)
         keep = m[a:b] == 0
         result[a:b][keep] = original[a:b][keep]
@@ -712,6 +875,35 @@ def x264_settings():
     return crf, preset
 
 
+VIDEO_ENCODERS = ('libx264', 'h264_nvenc', 'h264_qsv', 'h264_amf')
+
+
+def video_encoder():
+    """FLOW_VIDEO_ENCODER: libx264 (default) or a hardware H.264 encoder of the FFmpeg build."""
+    name = os.environ.get('FLOW_VIDEO_ENCODER', 'libx264')
+    require(name in VIDEO_ENCODERS, 'FLOW_VIDEO_ENCODER must be one of '+', '.join(VIDEO_ENCODERS))
+    return name
+
+
+def codec_args(preset=None):
+    """Encoder options. FLOW_CRF is the quality knob for every encoder (CQ/global_quality/QP);
+    preset 'ultrafast' (check-only exports) picks each encoder's fastest mode."""
+    crf, x264_preset = x264_settings()
+    fast = preset == 'ultrafast'
+    name = video_encoder()
+    if name == 'libx264':
+        return ['-c:v', 'libx264', '-threads', encode_threads(), '-crf', crf,
+                '-preset', preset or x264_preset, '-pix_fmt', 'yuv420p']
+    if name == 'h264_nvenc':
+        return ['-c:v', name, '-preset', 'p1' if fast else 'p5', '-tune', 'hq', '-rc', 'vbr',
+                '-cq', crf, '-b:v', '0', '-pix_fmt', 'yuv420p']
+    if name == 'h264_qsv':  # QSV takes NV12, a lossless re-packing of yuv420p
+        return ['-c:v', name, '-preset', 'veryfast' if fast else 'medium', '-global_quality', crf,
+                '-pix_fmt', 'nv12']
+    return ['-c:v', name, '-quality', 'speed' if fast else 'quality', '-rc', 'cqp',
+            '-qp_i', crf, '-qp_p', crf, '-qp_b', crf, '-pix_fmt', 'yuv420p']
+
+
 def segment_count(frames):
     # Opt-in: 1 (default) keeps the single-encoder bitstream; segments shorter than 12 frames are merged.
     value = os.environ.get('FLOW_SEGMENTS', '1')
@@ -732,8 +924,7 @@ def encoder(path, size, fps, source, color, audio_filter=None, audio=True, prese
            '-s', f'{size[0]}x{size[1]}', '-r', fps, '-protocol_whitelist', 'pipe', '-i', 'pipe:0',
            *(file_input(source) if audio else []),
            '-map', '0:v:0', *(['-map', '1:a:0?'] if audio else ['-an']),
-           '-c:v', 'libx264', '-threads', encode_threads(),
-           '-crf', x264_settings()[0], '-preset', preset or x264_settings()[1], '-pix_fmt', 'yuv420p', '-bsf:v', tags]
+           *codec_args(preset), '-bsf:v', tags]
     if audio and audio_filter is None:
         cmd += ['-c:a', 'copy']
     elif audio:
@@ -839,10 +1030,15 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None):
                             else:
                                 diff = np.empty(merged.shape, float)
                                 def work(a, b):
+                                    if kernels():
+                                        return kernels().diff64(merged[a:b], original[a:b], diff[a:b])
                                     diff[a:b] = merged[a:b].astype(float)-original[a:b].astype(float)
                                 in_bands(diff.shape[0], work)
                                 delta = cv2.resize(diff,(w,h),interpolation=cv2.INTER_LINEAR)
                                 def work(a, b, x=x, y=y):
+                                    if kernels():
+                                        return kernels().apply64(roi[a:b], delta[a:b], support[a:b],
+                                                                 scene[y+a:y+b,x:x+w])
                                     d = delta[a:b]; d[~support[a:b]] = 0
                                     scene[y+a:y+b,x:x+w] = np.clip(roi[a:b].astype(float)+d,0,255).round().astype(np.uint8)
                                 in_bands(h, work)
@@ -969,7 +1165,13 @@ def main():
                           'ffprobe':run([FFPROBE,'-version']).decode().splitlines()[0],
                           'libx264':True,'encode_threads':encode_threads(),
                           'crf_preset':list(x264_settings()),
-                          'segments':segment_count(1 << 30)},ensure_ascii=False,indent=2)); return
+                          'video_encoder':video_encoder(),
+                          'hardware_encoders_in_build':[e for e in VIDEO_ENCODERS[1:] if e in encoders],
+                          'segments':segment_count(1 << 30),
+                          'native_kernels':('enabled, bit-identical self-check passed' if kernels() else
+                                            'off (FLOW_KERNELS=numpy)' if os.environ.get('FLOW_KERNELS') == 'numpy'
+                                            else 'not built (references/native-kernels.md)')},
+                         ensure_ascii=False,indent=2)); return
     if args.mode == 'inspect':
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
@@ -983,6 +1185,11 @@ def main():
         span = (int(parts[0]), int(parts[1]))
     preset = 'ultrafast' if args.preview else None  # None: FLOW_X264_PRESET
     deliverable = span is None and not args.preview
+    # A hardware encoder may make check-only exports; deliverables need a quality comparison first.
+    hardware = video_encoder() != 'libx264'
+    require(not hardware or not deliverable or os.environ.get('FLOW_HW_DELIVERABLE') == '1',
+            f'{video_encoder()} for a deliverable or Flow upload needs FLOW_HW_DELIVERABLE=1 after '
+            'comparing its quality with libx264; see references/remote-worker.md')
     cfg = load(args.config.resolve())
     # Deliverable runs always re-probe in full; check runs may reuse probes of unchanged inputs.
     cache = None if deliverable else output_path(args.output).parent/'.flow-probe-cache'
@@ -992,6 +1199,9 @@ def main():
     require(span is None or 0 <= span[0] < span[1] <= info['frames'],
             'Invalid --frames interval for this source')
     notices = output_notices(info, args.mode)
+    if hardware:
+        notices.append(f'Video encoder {video_encoder()} (hardware); compare quality with libx264 '
+                       'before relying on it')
     for note in notices:
         print('NOTICE: '+note, file=sys.stderr)
     if args.dry_run:

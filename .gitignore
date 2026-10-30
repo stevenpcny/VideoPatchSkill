@@ -9,3 +9,4 @@ __pycache__/
 *.pem
 *.report.json
 .flow-probe-cache/
+flow-video-patch/native/target/
