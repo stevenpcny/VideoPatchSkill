@@ -2,7 +2,8 @@
   "package_version": "2.7",
   "update_scope": [
     "flow_patch.py: merge --copy-unpatched (GOP stream copy of unpatched source, re-encode only GOPs with patch frames, reorder delay matched, in-band parameter sets, per-frame murmur3 check of copied frames, automatic full-render fallback)",
-    "tests: smoke 19"
+    "tests: smoke 19",
+    "issue #8: remote_run option-value and worker-side path checks, full manifest verification before doctor, python full paths; security_test symlink/overwrite split with WinError 1314 skip; Windows GNU rust-lld note"
   ],
   "processing_scripts": "flow_patch.py changed; default merge output byte-identical to v2.6",
   "tool_policy_scope": "Package version only; uses existing FFmpeg stream copy, segment and concat",
@@ -25,10 +26,10 @@
       "platform": "Linux, 4 cores, FFmpeg 6.1.1",
       "per_kernel_mode": {
         "smoke_test": "19/19",
-        "security_test": "15/15",
+        "security_test": "16/16",
         "qc_tools_test": "5/5",
         "color_pipeline_test": "9/9",
-        "remote_run_test": "2/2",
+        "remote_run_test": "4/4",
         "ffmpeg_regression": "6/6"
       }
     },
@@ -40,7 +41,8 @@
       "third-party players and editors with mid-stream H.264 parameter-set changes",
       "hardware encoders",
       "remote_run against a real worker"
-    ]
+    ],
+    "windows_owner_report_v2_6": "issue #8: Windows 11 standard account, FFmpeg 9.0.2, GNU Rust 1.99.1 with rust-lld; native 52 pass, 1 symlink-privilege error (now skipped), 1 skip; Rust/NumPy outputs identical"
   },
   "limits": [
     "Check --copy-unpatched outputs in the actual player/editor before delivery",

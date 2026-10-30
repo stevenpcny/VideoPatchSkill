@@ -56,6 +56,41 @@ class RemoteRun(unittest.TestCase):
         self.assertEqual((back/self.clip.name).read_bytes(), self.clip.read_bytes())
         self.remote('pull', 'job 1', self.clip.name, '--dest', back, ok=False)  # never overwrites locally
 
+    def test_option_values_and_worker_side_guard(self):
+        for arg in ('--source=../outside.mp4', '--source=C:/outside.mp4', '--config=/etc/x.json',
+                    '--config=\\\\server\\share\\x.json'):
+            self.assertIn('stay inside the task folder',
+                          self.remote('run', 'job 3', 'flow_patch', 'inspect', arg, ok=False).stderr)
+        # The worker refuses too, even if the local check were bypassed.
+        sys.path.insert(0, str(ROOT/'scripts'))
+        import remote_run
+        from unittest import mock
+        (self.worker/'job 3').mkdir(exist_ok=True)
+        profile = json.loads(self.profile.read_text(encoding='utf-8'))
+        with mock.patch.dict(os.environ, {'FLOW_SSH': self.env['FLOW_SSH']}):
+            for arg in ('--source=../outside.mp4', '../outside.mp4', '--source=sub/../../outside.mp4'):
+                r = remote_run.ssh(profile, {'op': 'run', 'task': 'job 3', 'script': 'flow_patch',
+                                             'args': ['inspect', arg], 'env': {}}, capture_output=True)
+                self.assertNotEqual(r.returncode, 0, arg)
+                self.assertIn(b'Refused on the worker', r.stderr, arg)
+
+    def test_check_detects_changed_worker_file(self):
+        copy = self.base/'worker skill'
+        shutil.copytree(ROOT, copy, ignore=shutil.ignore_patterns('target', '__pycache__'))
+        profile = json.loads(self.profile.read_text(encoding='utf-8'))
+        changed = self.base/'profile-changed.json'
+        changed.write_text(json.dumps(dict(profile, skill_dir=str(copy))), encoding='utf-8')
+        env = dict(self.env, FLOW_WORKER_PROFILE=str(changed))
+        env.pop('FLOW_KERNELS', None)  # a real worker has its own environment; this copy has no native build
+        run = lambda: subprocess.run([sys.executable, str(ROOT/'scripts'/'remote_run.py'), 'check'], env=env,
+                                     capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(run().returncode, 0)
+        (copy/'scripts'/'flow_patch.py').write_text("print('SYNTHETIC MODIFIED DOCTOR')\n", encoding='utf-8')
+        r = run()
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('scripts/flow_patch.py', r.stderr)
+        self.assertNotIn('SYNTHETIC MODIFIED', r.stdout)  # doctor never ran
+
     def test_refusals(self):
         for args in (('run', 'job 2', 'rm', 'x'), ('run', 'job 2', 'flow_patch', 'inspect', '--source', '../x.mp4'),
                      ('run', 'job 2', 'flow_patch', 'inspect', '--source', str(self.clip)),

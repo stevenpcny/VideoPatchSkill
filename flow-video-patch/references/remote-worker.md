@@ -16,7 +16,7 @@
 {"ssh_alias": "worker", "task_root": "D:/flow-tasks", "skill_dir": "D:/skills/flow-video-patch", "python": "python"}
 ```
 
-`ssh_alias` 是 `~/.ssh/config` 中的 Host 别名。命令：
+`ssh_alias` 是 `~/.ssh/config` 中的 Host 别名。`python` 可写工作机 PATH 中的名称，或不含空格的完整路径（如 `C:/Python313/python.exe`）；路径含空格时 cmd.exe 与 sh 的引号规则不同，请把该目录加入工作机 PATH 后写名称。命令：
 
 ```bash
 python scripts/remote_run.py check
@@ -25,9 +25,9 @@ python scripts/remote_run.py run job-01 flow_patch merge --config merge.json --o
 python scripts/remote_run.py pull job-01 patched.mp4 patched.report.json --dest ./job-01
 ```
 
-- `check`：工作机运行 doctor，并比对两边 `SHA256SUMS.json`，技能副本不同即停止。
+- `check`：先核对本机副本与其 `SHA256SUMS.json`，再在工作机逐个计算清单所列文件的 SHA-256 并与本机清单比对；任一缺失、不同或清单含不安全路径即停止，不运行工作机上的任何脚本。全部一致后才运行 doctor。
 - `push`／`pull`：文件经 ssh 数据流传输，两端比对 SHA-256；不覆盖已有文件，不一致的取回副本自动删除。
-- `run`：只运行本包 `flow_patch`、`fit_patch`、`qc_tools`，工作目录为任务子目录；参数不得含绝对路径或 `..`。本地的 `FLOW_*` 设置（线程、分段、内核、CRF、编码器）随命令转发，其他环境变量不发送。
+- `run`：只运行本包 `flow_patch`、`fit_patch`、`qc_tools`，工作目录为任务子目录。参数（含 `--选项=值` 中的值）不得为绝对路径、盘符、UNC 或含 `..`；工作机再把含路径分隔符的参数解析为实际路径，确认仍在任务目录内才运行。配置 JSON 中的媒体路径是另一信任边界，按 `flow_patch.py` 自身规则处理；这些检查不是操作系统沙箱。本地的 `FLOW_*` 设置（线程、分段、内核、CRF、编码器）随命令转发，其他环境变量不发送。
 - 不提供删除；清理工作机文件仍须用户确认后手动进行。
 
 ## 执行顺序
