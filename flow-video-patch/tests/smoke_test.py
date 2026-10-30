@@ -483,7 +483,7 @@ class Smoke(unittest.TestCase):
         self.assertEqual(fp.decode_pass(src)[0][:1],[0.0])  # the video alone still decodes
         out=self.base/'bad-audio-out.mp4'
         r=cli('merge','--config',self.gop_config('bad-audio',src),'--output',out,ok=False)
-        self.assertIn('Decode errors',r.stderr)
+        self.assertIn('aac',r.stderr.lower())  # FFmpeg 6.1: 'Decode errors: ...'; 7+: -xerror exit with the decoder message
         self.assertFalse(out.exists() or out.with_suffix('.report.json').exists())
 
     def test_24_fallback_render_gets_its_own_strict_check(self):

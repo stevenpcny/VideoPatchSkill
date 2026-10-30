@@ -1178,12 +1178,21 @@ def regrid(source, output):
     A plain `-c copy` remux keeps Matroska's millisecond rounding (and per-packet durations), so the
     MP4 is not constant-rate. Each packet time here moves by under a quarter frame to its exact grid
     slot; frame pixels, frame count, order and audio payload are unchanged, and all are checked."""
-    info = probe(source)
-    require(info['on_frame_grid'], 'Frames are not within a quarter frame of n/fps; this is not '
-            'timestamp rounding, so regrid would retime the video. Normalize explicitly instead')
+    # The source's rate fields are rounded too (avg_frame_rate differs by FFmpeg version), so it is
+    # judged by r_frame_rate and its decoded timestamps; the output then passes the full strict probe.
+    data = json.loads(run([FFPROBE, '-v', 'error', '-show_streams', '-of', 'json',
+                           '-protocol_whitelist', 'file', local_media(source)]))
+    videos = [s for s in data['streams'] if s['codec_type'] == 'video']
+    require(len(videos) == 1, 'Require exactly one video stream')
+    fps = Fraction(videos[0]['r_frame_rate'])
+    require(fps > 0, 'Source has no frame rate')
     times = decode_pass(source)[0]
-    fps = Fraction(info['fps'])
+    require(times and abs(times[0]) < 0.001, 'Video must start near timestamp zero; remux explicitly')
     shift = max(abs(t-n/fps) for n, t in enumerate(times))
+    require(shift < 0.25/fps, 'Frames are not within a quarter frame of n/fps; this is not timestamp rounding, '
+            'so regrid would retime the video. Normalize explicitly instead')
+    streams = {kind: sum(x['codec_type'] == kind for x in data['streams'])
+               for kind in ('audio', 'subtitle', 'data', 'attachment')}
     n = fps.numerator
     timescale = n if n >= 1000 else 90000 if 90000 % n == 0 else n*-(-1000//n)
     snap = f'*TB*{fps.numerator}/{fps.denominator})'
@@ -1192,16 +1201,19 @@ def regrid(source, output):
            f':time_base={fps.denominator}/{fps.numerator}', '-video_track_timescale', str(timescale),
            '-movflags', '+faststart', output]
     run(cmd)
-    out = probe(output, True)
-    require(out['fps'] == info['fps'] and out['frames'] == info['frames'] and out['on_frame_grid'],
-            'Regridded file does not match the source frame rate or frame count')
-    require(decode_pass(output, True)[1] == decode_pass(source)[1], 'Regridded frames differ from the source')
-    if info['audio']:
+    try:
+        out = probe(output, True)
+    except ValueError as e:
+        raise ValueError(f'Regridded output failed its check: {e}') from e
+    require(Fraction(out['fps']) == fps and out['frames'] == len(times) and out['on_frame_grid'],
+            'Regridded output does not match the source frame rate or frame count')
+    require(frame_hashes(output) == decode_pass(source)[1], 'Regridded frames differ from the source')
+    if streams['audio']:
         require(audio_hash(output) == audio_hash(source), 'Regridded audio payload differs from the source')
-    dropped = {k: v for k, v in info['streams'].items() if k != 'audio' and v}
-    return {'source': str(Path(source).resolve()), 'output': str(output), 'fps': info['fps'], 'frames': info['frames'],
+    dropped = {k: v for k, v in streams.items() if k != 'audio' and v}
+    return {'source': str(Path(source).resolve()), 'output': str(output), 'fps': out['fps'], 'frames': out['frames'],
             'max_timestamp_shift_ms': round(shift*1000, 3), 'decoded_frames_identical': True,
-            'audio_payload_identical': info['audio'] or None, 'audio_tracks': info['streams']['audio'],
+            'audio_payload_identical': bool(streams['audio']) or None, 'audio_tracks': streams['audio'],
             'not_carried': dropped, 'copy_unpatched_eligible': copy_unpatched_reason(out) is None,
             'command_argv': [str(x) for x in cmd]}
 
