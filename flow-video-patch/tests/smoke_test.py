@@ -342,6 +342,48 @@ class Smoke(unittest.TestCase):
             outs[mode]=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))['output_sha256']
         self.assertEqual(outs['numpy'],outs['native'])
 
+    def test_18_copy_unpatched_gops(self):
+        # 48 frames, keyframe every 12, B-frames (reorder delay 2), with audio.
+        src=self.base/'gops.mp4'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=192x128:r=24:d=2','-f','lavfi',
+                '-i','sine=d=2','-c:v','libx264','-x264-params','keyint=12:min-keyint=12:scenecut=0:bframes=3',
+                '-pix_fmt','yuv420p','-c:a','aac','-shortest',src])
+        hashes=lambda path:[l.rsplit(',',1)[1].strip() for l in fp.run([fp.FFMPEG,'-v','error','-i',str(path),
+                            '-map','0:v:0','-f','framehash','-hash','murmur3','-']).decode().splitlines()
+                            if l and not l.startswith('#')]
+        source=hashes(src)
+        for name,target,render in (('middle',[14,20],(12,24)),('start',[0,5],(0,12))):
+            p=self.patch(generated=str(self.generated),target=target,frame_map=list(range(target[1]-target[0])),
+                         crop=[0,0,96,128],protect=None)
+            cfg=self.config('gops-'+name,source=str(src),source_size=[192,128],patches=[p])
+            out=self.base/f'gops-{name}.mp4'
+            cli('merge','--config',cfg,'--output',out,'--copy-unpatched')
+            rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
+            c=rpt['copy_unpatched']
+            self.assertEqual((c['rendered_frames'],c['copied_frames']),(12,36),name)
+            self.assertTrue(c['copied_frames_identical_to_source'])
+            got=hashes(out)
+            self.assertEqual(len(got),48)
+            # Independently: frames outside the re-encoded GOP equal the source bit for bit.
+            self.assertTrue(all(got[i]==source[i] for i in range(48) if not render[0]<=i<render[1]),name)
+            self.assertTrue(any(got[i]!=source[i] for i in range(*target)),name)
+            self.assertEqual(fp.audio_hash(src),fp.audio_hash(out))
+            info=fp.probe(out)
+            self.assertEqual((info['frames'],info['fps']),(48,'24'))
+
+    def test_19_copy_unpatched_falls_back_when_ineligible(self):
+        src=self.base/'444.mp4'
+        fp.run([fp.FFMPEG,'-v','error','-n','-i',str(self.source),'-c:v','libx264','-pix_fmt','yuv444p','-c:a','copy',src])
+        cfg=self.config('copy-fallback',source=str(src),patches=[self.patch()])
+        out=self.base/'copy-fallback.mp4'
+        p=cli('merge','--config',cfg,'--output',out,'--copy-unpatched')
+        self.assertIn('--copy-unpatched not used',p.stderr)
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
+        self.assertEqual(rpt['copy_unpatched'],{'used':False})
+        self.assertEqual(fp.probe(out)['frames'],24)
+        rejected=cli('merge','--config',cfg,'--output',self.base/'x2.mp4','--copy-unpatched','--frames','0:4',ok=False)
+        self.assertIn('full merges',rejected.stderr)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

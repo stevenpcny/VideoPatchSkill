@@ -5,7 +5,8 @@ All frame intervals are zero-based [start,end). All rectangles are x,y,w,h.
 Paths in JSON are relative to that JSON. See references/parameters.md.
 """
 import argparse
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import bisect
+from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 import contextlib
 import ctypes
 from fractions import Fraction
@@ -465,7 +466,7 @@ def _probe(path):
               'yuv444p': '4:4:4', 'yuvj444p': '4:4:4'}.get(s['pix_fmt'], 'rgb')
     return {'size': [s['width'], s['height']], 'fps': str(fps), 'frames': len(times),
             'audio': audio is not None, 'color': color_info(s), 'on_frame_grid': grid,
-            'chroma': chroma, 'streams': counts}
+            'chroma': chroma, 'streams': counts, 'codec': s.get('codec_name')}
 
 
 def output_notices(info, mode):
@@ -912,19 +913,23 @@ def segment_count(frames):
     return max(1, min(int(value), frames//12))
 
 
-def encoder(path, size, fps, source, color, audio_filter=None, audio=True, preset=None):
-    require(size[0] % 2 == 0 and size[1] % 2 == 0, 'Output dimensions must be even for yuv420p')
-    # Frames arrive as yuv420p already converted with the source matrix; tag via bitstream
-    # metadata, because output-side -colorspace flags make FFmpeg insert a lossy conversion.
-    tags = (f"h264_metadata=colour_primaries={PRIMARY_CODES[color['primaries']]}"
+def colour_tags(color):
+    return (f"h264_metadata=colour_primaries={PRIMARY_CODES[color['primaries']]}"
             f":transfer_characteristics={TRANSFER_CODES[color['transfer']]}"
             f":matrix_coefficients={MATRIX_CODES[color['matrix_tag']]}"
             f":video_full_range_flag={int(color['range'] == 'pc')}")
+
+
+def encoder(path, size, fps, source, color, audio_filter=None, audio=True, preset=None, bframes=None):
+    require(size[0] % 2 == 0 and size[1] % 2 == 0, 'Output dimensions must be even for yuv420p')
+    # Frames arrive as yuv420p already converted with the source matrix; tag via bitstream
+    # metadata, because output-side -colorspace flags make FFmpeg insert a lossy conversion.
+    tags = colour_tags(color)
     cmd = [FFMPEG, '-v', 'error', '-n', '-f', 'rawvideo', '-pix_fmt', 'yuv420p',
            '-s', f'{size[0]}x{size[1]}', '-r', fps, '-protocol_whitelist', 'pipe', '-i', 'pipe:0',
            *(file_input(source) if audio else []),
            '-map', '0:v:0', *(['-map', '1:a:0?'] if audio else ['-an']),
-           *codec_args(preset), '-bsf:v', tags]
+           *codec_args(preset), *(['-bf', str(bframes)] if bframes is not None else []), '-bsf:v', tags]
     if audio and audio_filter is None:
         cmd += ['-c:a', 'copy']
     elif audio:
@@ -959,7 +964,7 @@ def trimmed_audio(first, last, fps):
             f'apad,atrim=duration={float((last-first)/fps)}')
 
 
-def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None):
+def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, bframes=None):
     """Encode one output. A merge span=(first,last) exports only those source frames, with the
     matching audio re-encoded; segment=True makes it video-only for joining."""
     with contextlib.ExitStack() as stack:
@@ -984,7 +989,7 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None):
                 stack.callback(readers[-1].close)
             af = None if span is None else trimmed_audio(first, last, Fraction(info['fps']))
             cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], af,
-                          audio=not segment, preset=preset)
+                          audio=not segment, preset=preset, bframes=bframes)
             plan = {'size': size, 'frames': last-first, 'audio': info['audio']}
         log = stack.enter_context(tempfile.TemporaryFile())
         enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=log)
@@ -1074,8 +1079,9 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None):
 
 
 def _segment(job):
-    cfg, info, plans, span, path, preset = job
-    return process(cfg, info, 'merge', Path(path), plans, span, segment=True, preset=preset)[1]
+    cfg, info, plans, span, path, preset, *bframes = job
+    return process(cfg, info, 'merge', Path(path), plans, span, segment=True, preset=preset,
+                   bframes=bframes[0] if bframes else None)[1]
 
 
 def merge_segmented(cfg, info, plans, out, count, preset=None):
@@ -1115,6 +1121,140 @@ def merge_segmented(cfg, info, plans, out, count, preset=None):
                   'join_argv': join}
 
 
+class CopyFallback(Exception):
+    """--copy-unpatched cannot be used safely for this source; render in full instead."""
+
+
+def copy_unpatched_reason(info):
+    """None when unpatched source GOPs can be copied into the output, else why not."""
+    if info.get('codec') != 'h264':
+        return f"source video is {info.get('codec')}, not H.264"
+    if info['chroma'] != '4:2:0':
+        return f"source chroma is {info['chroma']}, not 4:2:0"
+    if not info.get('on_frame_grid'):
+        return 'source timestamps are not on the frame grid'
+    return None
+
+
+def keyframe_indices(path, fps, frames):
+    """Display-order frame numbers of the keyframes and the stream's reorder delay in frames,
+    read from packets (no decoding)."""
+    data = json.loads(run([FFPROBE, '-v', 'error', '-select_streams', 'v:0', '-show_entries',
+                           'packet=pts_time,dts_time,flags', '-of', 'json', '-protocol_whitelist', 'file',
+                           local_media(path)]))
+    fps = Fraction(fps)
+    packets = data.get('packets', [])
+    keys = sorted({round(float(p['pts_time'])*fps) for p in packets
+                   if 'K' in p.get('flags', '') and p.get('pts_time') not in (None, 'N/A')})
+    if not keys or keys[0] != 0 or keys[-1] >= frames:
+        raise CopyFallback('keyframe positions do not map onto source frames')
+    first = packets[0]
+    delay = round((float(first['pts_time'])-float(first['dts_time']))*fps) if first.get('dts_time') not in (None, 'N/A') else 0
+    return keys, delay
+
+
+def frame_hashes(path):
+    """128-bit murmur3 of every decoded frame (about the cost of decoding; MD5 is ~3x slower)."""
+    lines = run([FFMPEG, '-v', 'error', *file_input(path), '-map', '0:v:0', '-fps_mode', 'passthrough',
+                 '-f', 'framehash', '-hash', 'murmur3', '-']).decode().splitlines()
+    return [line.rsplit(',', 1)[1].strip() for line in lines if line and not line.startswith('#')]
+
+
+def merge_copy_unpatched(cfg, info, plans, out, preset=None):
+    """Copy the source's unpatched GOPs bit for bit and re-encode only GOPs holding patch frames.
+
+    Pieces are cut at source keyframes, joined without re-encoding (parameter sets in-band, colour
+    tags rewritten for the whole stream), and the original audio is copied once. Every copied frame
+    must then decode to the same MD5 as the source frame; otherwise CopyFallback is raised."""
+    frames = info['frames']
+    keys, delay = keyframe_indices(cfg['source'], info['fps'], frames)
+    # Re-encoded pieces reorder like the source (x264: 0, 1 or a 3-frame pyramid giving delay 2),
+    # so decode timestamps join without being squeezed; other delays fall back after the timing check.
+    dirty = sorted({p['target'][0]+k for p, q in zip(cfg['patches'], plans)
+                    for k, j in enumerate(q['indices']) if j is not None})
+    bounds = keys+[frames]
+    pieces = []  # [first, last, render?] with neighbouring GOPs of the same kind merged
+    for a, b in zip(bounds, bounds[1:]):
+        render = bisect.bisect_left(dirty, a) < bisect.bisect_left(dirty, b)
+        if pieces and pieces[-1][2] == render:
+            pieces[-1][1] = b
+        else:
+            pieces.append([a, b, render])
+    work = out.parent/'pieces'
+    work.mkdir()
+    # Hash the source frames while pieces are cut and rendered.
+    checks = ThreadPoolExecutor(3)
+    try:
+        return _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, work, checks)
+    finally:
+        checks.shutdown(wait=False, cancel_futures=True)
+
+
+def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, work, checks):
+    bframes = {0: 0, 1: 1}.get(delay, 3)
+    source_md5 = checks.submit(frame_hashes, cfg['source'])
+    cuts = [a for a, _, _ in pieces[1:]]
+    copy_cmd = [FFMPEG, '-v', 'error', '-n', *file_input(cfg['source']), '-map', '0:v:0', '-c', 'copy',
+                *(['-f', 'segment', '-segment_frames', ','.join(map(str, cuts)), '-reset_timestamps', '1',
+                   '-segment_format', 'mp4', str(work/'copy%04d.mp4')] if cuts else [str(work/'copy0000.mp4')])]
+    run(copy_cmd)
+    files, jobs = [], []
+    for k, (a, b, render) in enumerate(pieces):
+        if render:
+            files.append(work/f'render{k:04d}.mp4')
+            jobs.append((cfg, info, plans, (a, b), str(files[-1]), preset, bframes))
+            continue
+        files.append(work/f'copy{k:04d}.mp4')
+        count = json.loads(run([FFPROBE, '-v', 'error', '-count_packets', '-select_streams', 'v:0',
+                                '-show_entries', 'stream=nb_read_packets', '-of', 'json',
+                                '-protocol_whitelist', 'file', str(files[-1])]))['streams'][0]['nb_read_packets']
+        if int(count) != b-a:
+            raise CopyFallback(f'copied GOPs {a}-{b} hold {count} frames, expected {b-a}')
+    workers = min(len(jobs), segment_count(1 << 30)) if jobs else 0
+    if workers > 1:
+        saved = os.environ.get('FLOW_PROCESS_THREADS')
+        if saved in (None, '0'):
+            os.environ['FLOW_PROCESS_THREADS'] = str(max(1, (os.cpu_count() or 1)//workers))
+        try:
+            with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context('spawn')) as pool:
+                commands = list(pool.map(_segment, jobs))
+        finally:
+            if saved is None:
+                os.environ.pop('FLOW_PROCESS_THREADS', None)
+            else:
+                os.environ['FLOW_PROCESS_THREADS'] = saved
+    else:
+        commands = [_segment(job) for job in jobs]
+    listing = work/'pieces.txt'
+    listing.write_text(''.join(f"file '{f.name}'\n" for f in files), encoding='utf-8')
+    join = [FFMPEG, '-v', 'error', '-n', '-protocol_whitelist', 'file', '-f', 'concat', '-i', str(listing),
+            *file_input(cfg['source']), '-map', '0:v:0', '-map', '1:a:0?', '-c', 'copy',
+            '-bsf:v', 'h264_mp4toannexb,'+colour_tags(info['color']), '-movflags', '+faststart', str(out)]
+    run(join)
+    probe_job, output_job = checks.submit(_probe, str(out)), checks.submit(frame_hashes, out)
+    try:
+        joined = probe_job.result()
+    except ValueError as e:
+        raise CopyFallback(f'joined stream timing failed its check ({e})') from e
+    if joined['frames'] != frames:
+        raise CopyFallback('joined stream has a different frame count')
+    probed = Future(); probed.set_result(joined)
+    _PROBED[local_media(out)] = probed  # verify() reuses this full probe of the unchanged file
+    source_md5, output_md5 = source_md5.result(), output_job.result()
+    copied = [i for a, b, render in pieces if not render for i in range(a, b)]
+    if len(output_md5) != frames or any(source_md5[i] != output_md5[i] for i in copied):
+        raise CopyFallback('copied frames do not decode identically to the source')
+    for f in work.iterdir():
+        f.unlink()
+    work.rmdir()
+    plan = {'size': info['size'], 'frames': frames, 'audio': info['audio']}
+    rendered = sum(b-a for a, b, render in pieces if render)
+    return plan, {'copy_argv': copy_cmd, 'render_argv': commands, 'join_argv': join}, {
+        'source_keyframes': len(keys), 'copied_frames': frames-rendered, 'rendered_frames': rendered,
+        'pieces': [[a, b, 'render' if render else 'copy'] for a, b, render in pieces],
+        'copied_frames_identical_to_source': True}
+
+
 def verify(source, output, expected, copy_audio):
     # Independent full reads of the output run side by side; every check still runs.
     with ThreadPoolExecutor(4) as pool:
@@ -1151,6 +1291,8 @@ def main():
     parser.add_argument('--dry-run',action='store_true')
     parser.add_argument('--frames',metavar='START:END',
                         help='merge only: export source frames [START,END) for checking (not deliverable)')
+    parser.add_argument('--copy-unpatched',action='store_true',
+                        help='merge only: copy unpatched source GOPs bit for bit, re-encode only GOPs with patches')
     parser.add_argument('--preview',action='store_true',
                         help='merge only: fast ultrafast encode for checking (not deliverable)')
     args = parser.parse_args()
@@ -1176,7 +1318,7 @@ def main():
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
     require(args.config is not None and args.output is not None, '--config and --output required')
-    require(args.mode == 'merge' or not (args.frames or args.preview),
+    require(args.mode == 'merge' or not (args.frames or args.preview or args.copy_unpatched),
             '--frames/--preview apply to merge only; Flow uploads always use the full prepare encode')
     span = None
     if args.frames is not None:
@@ -1196,6 +1338,7 @@ def main():
     prefetch_probes([cfg['source'], *(p['generated'] for p in cfg.get('patches', []))], cache)
     info = validate_source(cfg)
     plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info)
+    require(not (args.copy_unpatched and span), '--copy-unpatched applies to full merges, not --frames')
     require(span is None or 0 <= span[0] < span[1] <= info['frames'],
             'Invalid --frames interval for this source')
     notices = output_notices(info, args.mode)
@@ -1213,8 +1356,25 @@ def main():
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.flow-patch-',dir=output.parent) as tmp:
         temp = Path(tmp)/output.name
+        smart = None
+        if args.copy_unpatched:
+            reason = copy_unpatched_reason(info)
+            if reason is None:
+                try:
+                    plan_used,cmd,smart = merge_copy_unpatched(cfg,info,plan,temp,preset)
+                except (CopyFallback, subprocess.CalledProcessError) as e:
+                    reason = (str(e) if isinstance(e, CopyFallback) else
+                              'FFmpeg could not cut or join the source GOPs')
+                    shutil.rmtree(temp.parent/'pieces', ignore_errors=True)
+                    with contextlib.suppress(FileNotFoundError):
+                        temp.unlink()
+            if reason is not None:
+                notices.append(f'--copy-unpatched not used ({reason}); rendered in full instead')
+                print('NOTICE: '+notices[-1], file=sys.stderr)
         count = segment_count(info['frames']) if args.mode == 'merge' and span is None else 1
-        if count > 1:
+        if smart is not None:
+            plan = plan_used
+        elif count > 1:
             plan,cmd = merge_segmented(cfg,info,plan,temp,count,preset)
         else:
             plan,cmd = process(cfg,info,args.mode,temp,plan,span,preset=preset)
@@ -1232,6 +1392,8 @@ def main():
             result['visual_review'] = ('not deliverable: partial/preview export for checking only; '
                                        'final acceptance must use a full export without --frames/--preview')
         result['notices'] = notices
+        if args.copy_unpatched:
+            result['copy_unpatched'] = smart or {'used': False}
         result['generated_sha256'] = {p['generated']:sha(p['generated']) for p in cfg.get('patches',[])}
         # Reserve both paths exclusively; remove only files created here on failure.
         with private_output(output, binary=True) as dest, private_output(report) as rpt:

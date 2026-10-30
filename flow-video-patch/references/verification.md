@@ -92,6 +92,7 @@
 可选生成1080p预览（从已合成输出缩小，不作为高分辨率母版来源）：
 
 ```bash
+# 用 --copy-unpatched 交付时，另在实际播放器/剪辑软件中拖动并播放各复制块与渲染块的交界
 ffmpeg -n -protocol_whitelist file -i patched.mp4 -vf "scale=1920:-2" -c:v libx264 -crf 20 -c:a copy preview.mp4
 ```
 
