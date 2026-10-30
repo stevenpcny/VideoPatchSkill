@@ -20,7 +20,7 @@ KR_KB = {'bt709':(0.2126,0.0722),'bt601':(0.299,0.114)}
 
 def cli(*args):
     p = subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),*map(str,args)],
-                       stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                       stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
     if p.returncode:
         raise AssertionError(p.stdout+p.stderr)
 

@@ -28,7 +28,7 @@ class Security(unittest.TestCase):
 
     def test_nested_network_protocol_rejected(self):
         media = self.base/'remote.ffconcat'
-        media.write_text('ffconcat version 1.0\nfile http://127.0.0.1:9/never-fetch.ts\n')
+        media.write_text('ffconcat version 1.0\nfile http://127.0.0.1:9/never-fetch.ts\n',encoding='utf-8')
         with self.assertRaises(subprocess.CalledProcessError) as ctx:
             fp.probe(media)
         # FFmpeg concat's safe-name policy or our protocol policy must reject it.
@@ -48,11 +48,11 @@ class Security(unittest.TestCase):
             with fp.private_output(link):
                 self.fail('Opened symlink')
         self.assertFalse(target.exists())
-        target.write_text('original')
+        target.write_text('original',encoding='utf-8')
         with self.assertRaises(FileExistsError):
             with fp.private_output(target):
                 self.fail('Replaced original')
-        self.assertEqual(target.read_text(), 'original')
+        self.assertEqual(target.read_text(encoding='utf-8'), 'original')
 
     def test_private_permissions_and_failure_cleanup(self):
         dest = self.base/'report.json'
@@ -68,21 +68,23 @@ class Security(unittest.TestCase):
 
     def test_report_collision_rolls_back_only_new_video(self):
         video, report = self.base/'out.mp4', self.base/'out.report.json'
-        report.write_text('original report')
+        report.write_text('original report',encoding='utf-8')
         with self.assertRaises(FileExistsError):
             with fp.private_output(video, binary=True), fp.private_output(report):
                 pass
         self.assertFalse(video.exists())
-        self.assertEqual(report.read_text(), 'original report')
+        self.assertEqual(report.read_text(encoding='utf-8'), 'original report')
 
+    @unittest.skipIf(os.name == 'nt', 'Windows refuses to rename a file that is still open, '
+                     'so the replacement race simulated here cannot happen there')
     def test_replacement_file_survives_failure_cleanup(self):
         dest = self.base/'race.json'
         with self.assertRaises(RuntimeError):
             with fp.private_output(dest):
                 dest.rename(self.base/'first.json')
-                dest.write_text('other file')
+                dest.write_text('other file',encoding='utf-8')
                 raise RuntimeError('simulated write error')
-        self.assertEqual(dest.read_text(), 'other file')
+        self.assertEqual(dest.read_text(encoding='utf-8'), 'other file')
 
     def test_pixel_and_config_budgets(self):
         fp.checked_size([7680,4320])
@@ -114,12 +116,36 @@ class Security(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     fp.encode_threads()
 
+    def test_x264_settings_bounded(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('FLOW_CRF', None); os.environ.pop('FLOW_X264_PRESET', None)
+            self.assertEqual(fp.x264_settings(), ('17', 'fast'))
+        with patch.dict(os.environ, {'FLOW_CRF': '12', 'FLOW_X264_PRESET': 'slow'}):
+            self.assertEqual(fp.x264_settings(), ('12', 'slow'))
+        for env in ({'FLOW_CRF': '52'}, {'FLOW_CRF': '17 -y'}, {'FLOW_CRF': ''},
+                    {'FLOW_X264_PRESET': 'placebo'}, {'FLOW_X264_PRESET': 'fast -y'}):
+            with patch.dict(os.environ, env):
+                with self.assertRaises(ValueError):
+                    fp.x264_settings()
+
+    def test_segments_bounded(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('FLOW_SEGMENTS', None)
+            self.assertEqual(fp.segment_count(1000), 1)
+        with patch.dict(os.environ, {'FLOW_SEGMENTS': '8'}):
+            self.assertEqual(fp.segment_count(1000), 8)
+            self.assertEqual(fp.segment_count(30), 2)  # at least 12 frames per segment
+        for bad in ('0', '33', '-2', '2 -y', 'auto', ''):
+            with patch.dict(os.environ, {'FLOW_SEGMENTS': bad}):
+                with self.assertRaises(ValueError):
+                    fp.segment_count(1000)
+
     def test_fit_rejects_negative_index_and_nonfinite_parameters(self):
         script = Path(fp.__file__).with_name('fit_patch.py')
         for args in (['--patch', '-1'], ['--max-shift', 'inf'], ['--min-correlation', 'nan']):
             result = subprocess.run([sys.executable, str(script), '--config', str(self.base/'absent'),
                                      '--output', str(self.base/'out.json'), *args],
-                                    capture_output=True, text=True, timeout=30)
+                                    capture_output=True, text=True,encoding='utf-8', timeout=30)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((self.base/'out.json').exists())
             self.assertNotIn('FileNotFoundError', result.stderr)

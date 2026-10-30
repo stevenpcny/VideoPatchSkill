@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "policy_id": "flow-local-allowlist-v1",
-  "package_version": "2.4",
+  "package_version": "2.5",
   "enforcement": "agent_instructions_not_an_os_sandbox",
   "default_decision": "stop_for_any_unlisted_media_tool_dependency_model_service_or_plugin",
   "allowed_scripts": [

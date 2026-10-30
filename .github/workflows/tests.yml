@@ -1,0 +1,52 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic:
+    # Synthetic media only; no user footage, models or network services.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: flow-video-patch
+    # No PYTHONUTF8: the scripts set UTF-8 output themselves, and Windows checks that.
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg
+        run: |
+          case "$RUNNER_OS" in
+            Linux) sudo apt-get update && sudo apt-get install -y ffmpeg ;;
+            macOS) brew install ffmpeg ;;
+            Windows) choco install ffmpeg -y --no-progress ;;
+          esac
+      - name: Install NumPy and one OpenCV distribution (TOOL_POLICY.json)
+        run: python -m pip install 'numpy>=1.26,<3' 'opencv-python-headless>=4.10,<6'
+      - name: Package hashes match SHA256SUMS.json
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib
+          sums = json.loads(pathlib.Path('SHA256SUMS.json').read_text())
+          bad = [k for k, v in sums.items()
+                 if hashlib.sha256(pathlib.Path(k).read_bytes()).hexdigest() != v]
+          assert not bad, f'Stale SHA256SUMS.json entries: {bad}'
+          PY
+      - run: python scripts/flow_patch.py doctor
+      - run: python tests/smoke_test.py
+      - run: python tests/security_test.py
+      - run: python tests/qc_tools_test.py
+      - run: python tests/color_pipeline_test.py
+      - run: sh tests/ffmpeg_regression.sh

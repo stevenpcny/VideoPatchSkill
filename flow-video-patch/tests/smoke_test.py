@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """One-command behavioral verification with disposable, synthetic media only."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -17,7 +18,7 @@ import flow_patch as fp
 
 def cli(*args, ok=True):
     p = subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),*map(str,args)],
-                       stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                       stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
     if ok and p.returncode:
         raise AssertionError(p.stdout+p.stderr)
     if not ok and not p.returncode:
@@ -96,7 +97,7 @@ class Smoke(unittest.TestCase):
         cli('prepare','--config',cfg,'--output',out,'--dry-run')
         self.assertFalse(out.exists())
         cli('prepare','--config',cfg,'--output',out)
-        rpt=json.loads(out.with_suffix('.report.json').read_text())
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
         self.assertEqual(rpt['output']['frames'],20)
         self.assertEqual(rpt['output']['core_in_upload'],[2,18])
         self.assertLess(image(out,5)[30:55,30:50].mean(),8)
@@ -150,9 +151,9 @@ class Smoke(unittest.TestCase):
                      matte=dict(region=[24,24,48,48],feather=6),blend='alpha')
         cfg=self.config('fit',patches=[p]);out=self.base/'fit-proposed.json'
         result=subprocess.run([sys.executable,str(ROOT/'scripts/fit_patch.py'),'--config',str(cfg),
-                               '--output',str(out)],capture_output=True,text=True)
+                               '--output',str(out)],capture_output=True,text=True,encoding='utf-8')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        proposed=json.loads(out.read_text())
+        proposed=json.loads(out.read_text(encoding='utf-8'))
         self.assertTrue(all(r['accepted'] for r in proposed['fit_review']['registration']))
         for row in proposed['patches'][0]['source_to_generated_affine']:
             self.assertLess(abs(row['value'][2]-2),.6)
@@ -167,10 +168,163 @@ class Smoke(unittest.TestCase):
                                      output_size=[96,128],mask_regions=[[24,24,32,40]]))
         out=self.base/'no-audio-upload.mp4'
         cli('prepare','--config',cfg,'--output',out)
-        rpt=json.loads(out.with_suffix('.report.json').read_text())
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
         self.assertEqual(rpt['output']['frames'],23)
         self.assertEqual(rpt['output']['core_in_upload'],[0,10])
         self.assertFalse(rpt['output']['audio'])
+
+    def test_09_cached_matte_and_banded_blend_are_exact(self):
+        spec=dict(region=[8,6,80,60],shape='ellipse',feather=10,protect=[[30,40,20,10]])
+        first=fp.matte(spec,0,[96,72]); first*=0
+        self.assertGreater(fp.matte(spec,5,[96,72]).max(),0.99,'cached matte was mutated')
+        np.testing.assert_array_equal(fp.matte(spec,5,[96,72]),fp._matte(spec,5,[96,72]))
+        rng=np.random.default_rng(3)
+        a,b=(rng.integers(0,256,(72,96,3),dtype=np.uint8) for _ in range(2))
+        m=fp._matte(dict(region=[8,6,80,60],shape='ellipse',feather=10),0,[96,72])
+        # Unbanded reference formulas from v2.4.
+        ref=a.astype(np.float32)*(1-m[:,:,None])+b.astype(np.float32)*m[:,:,None]
+        ga,gb,gm=[a.astype(np.float32)],[b.astype(np.float32)],[m]
+        for _ in range(2):
+            ga.append(cv2.pyrDown(ga[-1])); gb.append(cv2.pyrDown(gb[-1])); gm.append(cv2.pyrDown(gm[-1]))
+        mb=ga[-1]*(1-gm[-1][:,:,None])+gb[-1]*gm[-1][:,:,None]
+        for k in (1,0):
+            size=(ga[k].shape[1],ga[k].shape[0])
+            la=ga[k]-cv2.pyrUp(ga[k+1],dstsize=size); lb=gb[k]-cv2.pyrUp(gb[k+1],dstsize=size)
+            mb=cv2.pyrUp(mb,dstsize=size)+la*(1-gm[k][:,:,None])+lb*gm[k][:,:,None]
+        for method,levels,expect in (('alpha',5,ref),('multiband',2,mb)):
+            expect=np.clip(expect,0,255).round().astype(np.uint8); expect[m==0]=a[m==0]
+            np.testing.assert_array_equal(fp.blend(a,b,m,method,levels),expect)
+
+    def test_10_segmented_merge_matches_single(self):
+        # Second segment starts mid-return (generated frame 12) and ends on the held tail frame.
+        cfg=self.config('segmented',patches=[self.patch()])
+        single,split=self.base/'single.mp4',self.base/'split.mp4'
+        cli('merge','--config',cfg,'--output',single)
+        p=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),
+                          '--output',str(split)],env=dict(os.environ,FLOW_SEGMENTS='2'),
+                         stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
+        self.assertEqual(p.returncode,0,p.stderr)
+        rpt=json.loads(split.with_suffix('.report.json').read_text(encoding='utf-8'))
+        self.assertEqual([s['frames'] for s in rpt['command_argv']['segments']],[[0,12],[12,24]])
+        self.assertEqual(fp.probe(split)['frames'],24)
+        self.assertEqual(fp.audio_hash(self.source),fp.audio_hash(split))
+        # Separate encodes differ by coding noise only: each segmented frame is still nearest to
+        # the same frame of the single encode (the moving square makes neighbours distinct).
+        def rows(path):
+            reader=fp.Reader(path,[192,128])
+            try:
+                return [reader.get(k)[8:24].astype(float) for k in range(24)]
+            finally:
+                reader.close()
+        ref=rows(single)
+        for i,got in enumerate(rows(split)):
+            self.assertEqual(int(np.argmin([np.abs(got-r).mean() for r in ref])),i,f'frame {i}')
+
+    def test_11_partial_preview_export_is_marked_and_aligned(self):
+        cfg=self.config('partial',patches=[self.patch()])
+        full,part=self.base/'partial-full.mp4',self.base/'partial.mp4'
+        cli('merge','--config',cfg,'--output',full)
+        out=cli('merge','--config',cfg,'--output',part,'--frames','6:18','--preview').stdout
+        self.assertIn('not deliverable',out)
+        rpt=json.loads(part.with_suffix('.report.json').read_text(encoding='utf-8'))
+        self.assertEqual(rpt['scope'],{'frames':[6,18],'preview_encode':True,'deliverable':False})
+        self.assertTrue(rpt['visual_review'].startswith('not deliverable'))
+        self.assertIn('ultrafast',rpt['command_argv'])
+        info=fp.probe(part)
+        self.assertEqual((info['frames'],info['audio']),(12,True))
+        # Each exported frame is nearest to the same source-numbered frame of the full export.
+        a,b=fp.Reader(full,[192,128]),fp.Reader(part,[192,128])
+        try:
+            ref=[a.get(k)[8:24].astype(float) for k in range(24)]
+            for k in range(12):
+                got=b.get(k)[8:24].astype(float)
+                self.assertEqual(int(np.argmin([np.abs(got-r).mean() for r in ref])),6+k)
+        finally:
+            a.close(); b.close()
+        # Unchanged inputs were cached for check runs; a deliverable run never writes the cache.
+        self.assertEqual(len(list((self.base/'.flow-probe-cache').glob('*.json'))),2)
+        rejected=cli('prepare','--config',cfg,'--output',self.base/'x.mp4','--preview',ok=False)
+        self.assertIn('merge only',rejected.stderr)
+        for bad in ('18:6','0:25','a:b'):
+            cli('merge','--config',cfg,'--output',self.base/'bad.mp4','--frames',bad,ok=False)
+
+    def test_12_seeking_reader_matches_sequential_decode(self):
+        info=fp.probe(self.source)
+        self.assertTrue(info['on_frame_grid'])
+        seq=fp.Reader(self.source,info['size'])
+        try:
+            frames=[seq.get(i).copy() for i in range(24)]
+        finally:
+            seq.close()
+        for start in (1,11,12,23):
+            for fps in (None,info['fps']):  # frame-number select and timestamp seek
+                r=fp.Reader(self.source,info['size'],start=start,fps=fps)
+                try:
+                    np.testing.assert_array_equal(r.get(start),frames[start])
+                finally:
+                    r.close()
+
+    def test_13_probe_cache_tracks_file_changes(self):
+        cache=self.base/'probe-cache'
+        clip=self.base/'cache-clip.mp4'; clip.write_bytes(self.generated.read_bytes())
+        path=fp.local_media(clip)
+        first=fp.cached_probe(path,cache)
+        entry,=cache.glob('*.json')
+        entry.write_text('{"frames": 999}',encoding='utf-8')
+        self.assertEqual(fp.cached_probe(path,cache)['frames'],999)  # same stat: cache is used
+        os.utime(clip,ns=(1,1))  # a changed file gets a fresh, full probe
+        self.assertEqual(fp.cached_probe(path,cache),first)
+
+    def test_14_fit_affine_scale(self):
+        original=[image(self.source,i)[:,:96].copy() for i in range(24)]
+        known=np.array([[1.04,0,-1.0],[0,1.04,-2.0]],np.float32)
+        gen=[cv2.warpAffine(im,known,(96,128)) for im in original]
+        gp=self.base/'fit-scale.mp4';encode(gp,gen)
+        p=self.patch(generated=str(gp),frame_map=list(range(24)),
+                     matte=dict(region=[30,30,36,48],feather=6),blend='alpha')
+        cfg=self.config('fit-scale',patches=[p]);out=self.base/'fit-scale-proposed.json'
+        run=lambda *extra:subprocess.run([sys.executable,str(ROOT/'scripts/fit_patch.py'),'--config',str(cfg),
+                                          '--output',str(out),*extra],capture_output=True,text=True,encoding='utf-8')
+        result=run('--motion','affine')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        proposed=json.loads(out.read_text(encoding='utf-8'))
+        self.assertEqual(proposed['fit_review']['motion'],'affine')
+        for row in proposed['patches'][0]['source_to_generated_affine']:
+            np.testing.assert_allclose(row['value'],known.flatten(),atol=.6)
+            self.assertLess(abs(row['value'][0]-1.04),.01); self.assertLess(abs(row['value'][4]-1.04),.01)
+        out.unlink()
+        # The scale exceeds a tighter bound, so no proposal is written.
+        self.assertNotEqual(run('--motion','affine','--max-linear-change','0.01').returncode,0)
+        self.assertFalse(out.exists())
+
+    def test_15_one_sided_fade(self):
+        cfg=self.config('fade-in',patches=[self.patch(fade_in_frames=6,protect=None)]);out=self.base/'fade-in.mp4'
+        cli('merge','--config',cfg,'--output',out)
+        src,res=fp.Reader(self.source,[192,128]),fp.Reader(out,[192,128])
+        try:
+            diff=lambda i:np.mean(abs(res.get(i)[30:60,30:65].astype(float)-src.get(i)[30:60,30:65]))
+            self.assertLess(diff(0),6)       # weight 0 on the first frame: coding noise only
+            self.assertGreater(diff(12),20)  # full weight after the fade-in
+            self.assertGreater(diff(23),20)  # no fade-out at the end
+        finally:
+            src.close(); res.close()
+        bad=self.config('fade-bad',patches=[self.patch(fade_in_frames=20,fade_out_frames=10)])
+        self.assertIn('fade',cli('merge','--config',bad,'--output',self.base/'fade-bad.mp4',ok=False).stderr)
+
+    def test_16_notices_and_millisecond_mkv(self):
+        src=self.base/'422-two-tracks.mkv'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=96x64:r=30:d=1',
+                '-f','lavfi','-i','sine=d=1','-f','lavfi','-i','sine=f=880:d=1',
+                '-map','0','-map','1','-map','2','-c:v','libx264','-pix_fmt','yuv422p','-c:a','flac',src])
+        info=fp.probe(src)  # Matroska stores 1 ms ticks: steps alternate 33/34 ms at 30 fps.
+        self.assertEqual((info['fps'],info['frames'],info['chroma'],info['streams']['audio']),('30',30,'4:2:2',2))
+        self.assertTrue(info['on_frame_grid'])
+        cfg=self.config('notices',source=str(src),source_size=[96,64],fps=30,
+                        prepare=dict(core=[5,20],crop=[0,0,96,64],output_size=[96,64],mask_regions=[[8,8,16,16]]))
+        p=cli('prepare','--config',cfg,'--output',self.base/'n.mp4','--dry-run')
+        notices=json.loads(p.stdout)['notices']
+        self.assertTrue(any('4:2:2' in n for n in notices) and any('2 audio tracks' in n for n in notices))
+        self.assertIn('NOTICE:',p.stderr)
 
 
 if __name__=='__main__':
