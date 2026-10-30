@@ -75,6 +75,8 @@ class Security(unittest.TestCase):
         self.assertFalse(video.exists())
         self.assertEqual(report.read_text(), 'original report')
 
+    @unittest.skipIf(os.name == 'nt', 'Windows refuses to rename a file that is still open, '
+                     'so the replacement race simulated here cannot happen there')
     def test_replacement_file_survives_failure_cleanup(self):
         dest = self.base/'race.json'
         with self.assertRaises(RuntimeError):

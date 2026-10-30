@@ -220,6 +220,61 @@ class Smoke(unittest.TestCase):
         for i,got in enumerate(rows(split)):
             self.assertEqual(int(np.argmin([np.abs(got-r).mean() for r in ref])),i,f'frame {i}')
 
+    def test_11_partial_preview_export_is_marked_and_aligned(self):
+        cfg=self.config('partial',patches=[self.patch()])
+        full,part=self.base/'partial-full.mp4',self.base/'partial.mp4'
+        cli('merge','--config',cfg,'--output',full)
+        out=cli('merge','--config',cfg,'--output',part,'--frames','6:18','--preview').stdout
+        self.assertIn('not deliverable',out)
+        rpt=json.loads(part.with_suffix('.report.json').read_text())
+        self.assertEqual(rpt['scope'],{'frames':[6,18],'preview_encode':True,'deliverable':False})
+        self.assertTrue(rpt['visual_review'].startswith('not deliverable'))
+        self.assertIn('ultrafast',rpt['command_argv'])
+        info=fp.probe(part)
+        self.assertEqual((info['frames'],info['audio']),(12,True))
+        # Each exported frame is nearest to the same source-numbered frame of the full export.
+        a,b=fp.Reader(full,[192,128]),fp.Reader(part,[192,128])
+        try:
+            ref=[a.get(k)[8:24].astype(float) for k in range(24)]
+            for k in range(12):
+                got=b.get(k)[8:24].astype(float)
+                self.assertEqual(int(np.argmin([np.abs(got-r).mean() for r in ref])),6+k)
+        finally:
+            a.close(); b.close()
+        # Unchanged inputs were cached for check runs; a deliverable run never writes the cache.
+        self.assertEqual(len(list((self.base/'.flow-probe-cache').glob('*.json'))),2)
+        rejected=cli('prepare','--config',cfg,'--output',self.base/'x.mp4','--preview',ok=False)
+        self.assertIn('merge only',rejected.stderr)
+        for bad in ('18:6','0:25','a:b'):
+            cli('merge','--config',cfg,'--output',self.base/'bad.mp4','--frames',bad,ok=False)
+
+    def test_12_seeking_reader_matches_sequential_decode(self):
+        info=fp.probe(self.source)
+        self.assertTrue(info['on_frame_grid'])
+        seq=fp.Reader(self.source,info['size'])
+        try:
+            frames=[seq.get(i).copy() for i in range(24)]
+        finally:
+            seq.close()
+        for start in (1,11,12,23):
+            for fps in (None,info['fps']):  # frame-number select and timestamp seek
+                r=fp.Reader(self.source,info['size'],start=start,fps=fps)
+                try:
+                    np.testing.assert_array_equal(r.get(start),frames[start])
+                finally:
+                    r.close()
+
+    def test_13_probe_cache_tracks_file_changes(self):
+        cache=self.base/'probe-cache'
+        clip=self.base/'cache-clip.mp4'; clip.write_bytes(self.generated.read_bytes())
+        path=fp.local_media(clip)
+        first=fp.cached_probe(path,cache)
+        entry,=cache.glob('*.json')
+        entry.write_text('{"frames": 999}',encoding='utf-8')
+        self.assertEqual(fp.cached_probe(path,cache)['frames'],999)  # same stat: cache is used
+        os.utime(clip,ns=(1,1))  # a changed file gets a fresh, full probe
+        self.assertEqual(fp.cached_probe(path,cache),first)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

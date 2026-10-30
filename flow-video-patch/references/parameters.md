@@ -74,6 +74,9 @@ python scripts/flow_patch.py prepare --config "prepare.json" --output "upload.mp
 python scripts/flow_patch.py prepare --config "prepare.json" --output "upload.mp4"
 python scripts/flow_patch.py merge --config "merge.json" --output "patched.mp4" --dry-run
 python scripts/flow_patch.py merge --config "merge.json" --output "patched.mp4"
+python scripts/flow_patch.py merge --config "merge.json" --output "check-40-80.mp4" --frames 40:80 --preview
 ```
+
+检查用导出（仅 `merge`）：`--frames START:END` 只导出原片帧 `[START,END)`，配置中的帧号不用改，各帧与完整导出的同号帧来自同一计算；该段音频重编码为 AAC。`--preview` 改用 libx264 `ultrafast` 编码，画面计算不变、编码更快、文件更大。两者可单用或合用，报告 `scope.deliverable=false`、`visual_review` 标为不可交付，终端输出注明 "check only, not deliverable"；最终交付与视觉验收必须用不带这两个参数的完整导出。检查用导出在输出目录的 `.flow-probe-cache/` 缓存原片与返回片的探测结果（按路径、大小、修改时间与 inode 识别，文件变动即重新探测），正式导出始终完整探测、不读写缓存；该目录可随时删除。`prepare` 不接受这两个参数，上传 Flow 的素材始终完整编码。
 
 dry-run仍读取并检查媒体/参数，不生成视频。正式输出拒绝覆盖已存在的视频或同名report；使用临时文件编码并验证后再发布新输出。报告记录配置、实际命令、文件SHA256、尺寸/fps/帧数、完整解码与合成音轨载荷哈希；`visual_review`默认pending，不能当视觉验收通过。临时命令路径属于执行记录，后续复现应使用报告里的配置重新运行。

@@ -67,7 +67,7 @@ python scripts/flow_patch.py merge --config "merge-proposed.json" --output "patc
 python scripts/flow_patch.py merge --config "merge-proposed.json" --output "patched.mp4"
 ```
 
-先使用短源片或短target确认关键位置，再按最终参数从原始尺寸重新合成。仅缩短target不会缩短输出源片；想快速导出短片，先明确裁出工作源并同步重编号。不要把1080p预览放大成8K交付。多人从原片一次合成，避免修一次就重压一次。版本迭代仍从原片和原始返回重新导出，尽量合并处理后只做一次最终有损编码。独立补丁须记录是否已去黑边、是否已缩到贴回尺寸。
+先用 `merge --frames START:END --preview` 导出关键区间确认位置与融合（帧号沿用原配置，无需裁源片或重编号；见[参数与命令](parameters.md)），再按最终参数从原始尺寸完整合成。检查用导出不能交付或代替最终文件的视觉验收。不要把1080p预览放大成8K交付。多人从原片一次合成，避免修一次就重压一次。版本迭代仍从原片和原始返回重新导出，尽量合并处理后只做一次最终有损编码。独立补丁须记录是否已去黑边、是否已缩到贴回尺寸。
 
 ## 6. 复核与交付
 

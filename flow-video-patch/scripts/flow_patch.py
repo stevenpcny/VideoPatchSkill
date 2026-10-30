@@ -232,11 +232,32 @@ def bgr_to_yuv420(bgr, color):
 _PROBED = {}
 
 
-def prefetch_probes(paths):
-    """Start probing several inputs at once; probe() then picks up the pending result."""
+PROBE_CACHE_FORMAT = 1
+
+
+def cached_probe(path, cache):
+    """Probe result reused while the file's path, size, mtime and inode are unchanged."""
+    st = os.stat(path)
+    key = hashlib.sha256(json.dumps([PROBE_CACHE_FORMAT, path, st.st_size, st.st_mtime_ns,
+                                     st.st_ino]).encode()).hexdigest()
+    entry = cache/(key+'.json')
+    with contextlib.suppress(OSError, ValueError):
+        return json.loads(entry.read_text(encoding='utf-8'))
+    info = _probe(path)
+    with contextlib.suppress(OSError):
+        cache.mkdir(mode=0o700, exist_ok=True)
+        with private_output(entry.with_suffix(f'.{os.getpid()}.tmp')) as f:
+            json.dump(info, f)
+        os.replace(entry.with_suffix(f'.{os.getpid()}.tmp'), entry)
+    return info
+
+
+def prefetch_probes(paths, cache=None):
+    """Start probing several inputs at once; probe() then picks up the pending result.
+    With a cache folder (check-only runs), unchanged inputs skip their full decoding pass."""
     pool = ThreadPoolExecutor(max(1, len(set(paths))))
     for path in dict.fromkeys(local_media(p) for p in paths):
-        _PROBED[path] = pool.submit(_probe, path)
+        _PROBED[path] = pool.submit(_probe, path) if cache is None else pool.submit(cached_probe, path, cache)
     pool.shutdown(wait=False)
 
 
@@ -281,8 +302,10 @@ def _probe(path):
     require(audio is None or abs(float(audio.get('start_time', 0))) < 0.001,
             'Audio starts at a nonzero timestamp; normalize offsets explicitly')
     require(len(times) == int(s['nb_read_frames']), 'Frame count mismatch')
+    # Frame n at n/fps (within a quarter frame) lets readers seek straight to a frame.
+    grid = all(abs(t-n/fps) < 0.25/fps for n, t in enumerate(times))
     return {'size': [s['width'], s['height']], 'fps': str(fps), 'frames': len(times),
-            'audio': audio is not None, 'color': color_info(s)}
+            'audio': audio is not None, 'color': color_info(s), 'on_frame_grid': grid}
 
 
 def sha(path):
@@ -326,8 +349,9 @@ def rectangle(value, frame, size):
 class Reader:
     """Sequential decoder; permits repeated indices, refuses backwards reads.
 
-    start skips earlier frames by decoded frame number (not by seeking timestamps)."""
-    def __init__(self, path, size, color=None, start=0):
+    start skips earlier frames: by seeking halfway between frames start-1 and start when fps is
+    given (probe found every frame on the n/fps grid), otherwise by decoded frame number."""
+    def __init__(self, path, size, color=None, start=0, fps=None):
         self.w, self.h = checked_size(size)
         self.color = color or stream_color(path)
         self.log = tempfile.TemporaryFile()
@@ -336,12 +360,15 @@ class Reader:
         # (yuvj) input into limited range when converting to yuv444p.
         rng = 'pc' if self.color['range'] == 'pc' else 'tv'
         require(type(start) is int and start >= 0, 'Invalid reader start frame')
-        chain = [f'select=gte(n\\,{start})'] if start else []
+        seek = []
+        if start and fps:
+            seek = ['-ss', f'{float((start-Fraction(1, 2))/Fraction(fps)):.6f}']
+        chain = [f'select=gte(n\\,{start})'] if start and not seek else []
         if self.color['rgb_input']:
             convert = (['-vf', ','.join(chain)] if chain else [])+['-pix_fmt', fmt]
         else:
             convert = ['-vf', ','.join(chain+[f'scale=in_range={rng}:out_range={rng},format={fmt}'])]
-        self.p = subprocess.Popen([FFMPEG, '-v', 'error', '-noautorotate', *file_input(path),
+        self.p = subprocess.Popen([FFMPEG, '-v', 'error', '-noautorotate', *seek, *file_input(path),
                                    '-map', '0:v:0', '-an', '-fps_mode', 'passthrough',
                                    *convert, '-f', 'rawvideo', '-'],
                                   stdout=subprocess.PIPE, stderr=self.log)
@@ -646,7 +673,7 @@ def segment_count(frames):
     return max(1, min(int(value), frames//12))
 
 
-def encoder(path, size, fps, source, color, audio_filter=None, audio=True):
+def encoder(path, size, fps, source, color, audio_filter=None, audio=True, preset='fast'):
     require(size[0] % 2 == 0 and size[1] % 2 == 0, 'Output dimensions must be even for yuv420p')
     # Frames arrive as yuv420p already converted with the source matrix; tag via bitstream
     # metadata, because output-side -colorspace flags make FFmpeg insert a lossy conversion.
@@ -659,7 +686,7 @@ def encoder(path, size, fps, source, color, audio_filter=None, audio=True):
            *(file_input(source) if audio else []),
            '-map', '0:v:0', *(['-map', '1:a:0?'] if audio else ['-an']),
            '-c:v', 'libx264', '-threads', encode_threads(),
-           '-crf', '17', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-bsf:v', tags]
+           '-crf', '17', '-preset', preset, '-pix_fmt', 'yuv420p', '-bsf:v', tags]
     if audio and audio_filter is None:
         cmd += ['-c:a', 'copy']
     elif audio:
@@ -667,17 +694,25 @@ def encoder(path, size, fps, source, color, audio_filter=None, audio=True):
     return cmd+['-movflags', '+faststart', str(path)]
 
 
-def process(cfg, info, mode, out, plan, span=None):
-    """Encode one output; span=(first,last) makes a video-only merge segment of those frames."""
+def trimmed_audio(first, last, fps):
+    """Source audio for frames [first,last), padded to the exact video duration."""
+    return (f'atrim=start={float(first/fps)}:end={float(last/fps)},asetpts=PTS-STARTPTS,'
+            f'apad,atrim=duration={float((last-first)/fps)}')
+
+
+def process(cfg, info, mode, out, plan, span=None, segment=False, preset='fast'):
+    """Encode one output. A merge span=(first,last) exports only those source frames, with the
+    matching audio re-encoded; segment=True makes it video-only for joining."""
     with contextlib.ExitStack() as stack:
         start = plan['first'] if mode == 'prepare' else (span or (0,))[0]
-        source = Reader(cfg['source'], info['size'], info['color'], start); stack.callback(source.close)
+        grid = lambda i: i['fps'] if i.get('on_frame_grid') else None
+        source = Reader(cfg['source'], info['size'], info['color'], start, grid(info))
+        stack.callback(source.close)
         if mode == 'prepare':
             p = cfg['prepare']; size = plan['size']
             fps = Fraction(info['fps']); first, last = plan['first'], plan['last']
-            af = (f'atrim=start={float(first/fps)}:end={float(last/fps)},asetpts=PTS-STARTPTS,'
-                  f'apad,atrim=duration={float((last-first)/fps)}')
-            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], af)
+            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'],
+                          trimmed_audio(first, last, fps), preset=preset)
         else:
             plans = plan; size = info['size']; first, last = span or (0, info['frames'])
             readers = []
@@ -686,10 +721,12 @@ def process(cfg, info, mode, out, plan, span=None):
                 used = [j for k,j in enumerate(q['indices'])
                         if j is not None and first <= p['target'][0]+k < last]
                 readers.append(Reader(p['generated'], q['info']['size'], q['info']['color'],
-                                      min(used, default=0)))
+                                      min(used, default=0), grid(q['info'])))
                 stack.callback(readers[-1].close)
-            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], audio=span is None)
-            plan = {'size': size, 'frames': info['frames'], 'audio': info['audio']}
+            af = None if span is None else trimmed_audio(first, last, Fraction(info['fps']))
+            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], af,
+                          audio=not segment, preset=preset)
+            plan = {'size': size, 'frames': last-first, 'audio': info['audio']}
         log = stack.enter_context(tempfile.TemporaryFile())
         enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=log)
         out_frames = FrameWriter(enc.stdin)
@@ -785,11 +822,11 @@ def process(cfg, info, mode, out, plan, span=None):
 
 
 def _segment(job):
-    cfg, info, plans, span, path = job
-    return process(cfg, info, 'merge', Path(path), plans, span)[1]
+    cfg, info, plans, span, path, preset = job
+    return process(cfg, info, 'merge', Path(path), plans, span, segment=True, preset=preset)[1]
 
 
-def merge_segmented(cfg, info, plans, out, count):
+def merge_segmented(cfg, info, plans, out, count, preset='fast'):
     """Merge frame ranges in parallel processes, join without re-encoding, then copy audio once.
 
     Each segment is its own libx264 encode starting on a keyframe, so the bitstream differs from a
@@ -808,7 +845,8 @@ def merge_segmented(cfg, info, plans, out, count):
         os.environ['FLOW_PROCESS_THREADS'] = str(max(1, (os.cpu_count() or 1)//count))
     try:
         with ProcessPoolExecutor(count, mp_context=multiprocessing.get_context('spawn')) as pool:
-            commands = list(pool.map(_segment, [(cfg, info, plans, s, str(p)) for s, p in zip(spans, parts)]))
+            commands = list(pool.map(_segment, [(cfg, info, plans, s, str(p), preset)
+                                                  for s, p in zip(spans, parts)]))
     finally:
         if saved is None:
             os.environ.pop('FLOW_PROCESS_THREADS', None)
@@ -851,6 +889,10 @@ def main():
     parser.add_argument('--source',type=Path)
     parser.add_argument('--output',type=Path)
     parser.add_argument('--dry-run',action='store_true')
+    parser.add_argument('--frames',metavar='START:END',
+                        help='merge only: export source frames [START,END) for checking (not deliverable)')
+    parser.add_argument('--preview',action='store_true',
+                        help='merge only: fast ultrafast encode for checking (not deliverable)')
     args = parser.parse_args()
     for t in (FFMPEG,FFPROBE):
         require(shutil.which(t), f'Tool missing: {t}; see references/install.md')
@@ -867,10 +909,23 @@ def main():
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
     require(args.config is not None and args.output is not None, '--config and --output required')
+    require(args.mode == 'merge' or not (args.frames or args.preview),
+            '--frames/--preview apply to merge only; Flow uploads always use the full prepare encode')
+    span = None
+    if args.frames is not None:
+        parts = args.frames.split(':')
+        require(len(parts) == 2 and all(v.isdigit() for v in parts), '--frames must be START:END')
+        span = (int(parts[0]), int(parts[1]))
+    preset = 'ultrafast' if args.preview else 'fast'
+    deliverable = span is None and not args.preview
     cfg = load(args.config.resolve())
-    prefetch_probes([cfg['source'], *(p['generated'] for p in cfg.get('patches', []))])
+    # Deliverable runs always re-probe in full; check runs may reuse probes of unchanged inputs.
+    cache = None if deliverable else output_path(args.output).parent/'.flow-probe-cache'
+    prefetch_probes([cfg['source'], *(p['generated'] for p in cfg.get('patches', []))], cache)
     info = validate_source(cfg)
     plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info)
+    require(span is None or 0 <= span[0] < span[1] <= info['frames'],
+            'Invalid --frames interval for this source')
     if args.dry_run:
         print(json.dumps({'mode':args.mode,'config':cfg,'source_info':info,'plan':plan},
                          ensure_ascii=False,indent=2)); return
@@ -880,24 +935,31 @@ def main():
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.flow-patch-',dir=output.parent) as tmp:
         temp = Path(tmp)/output.name
-        count = segment_count(info['frames']) if args.mode == 'merge' else 1
+        count = segment_count(info['frames']) if args.mode == 'merge' and span is None else 1
         if count > 1:
-            plan,cmd = merge_segmented(cfg,info,plan,temp,count)
+            plan,cmd = merge_segmented(cfg,info,plan,temp,count,preset)
         else:
-            plan,cmd = process(cfg,info,args.mode,temp,plan)
+            plan,cmd = process(cfg,info,args.mode,temp,plan,span,preset=preset)
         expected = dict(plan,fps=info['fps'])
-        result = verify(cfg['source'],temp,expected,args.mode=='merge')
+        # A partial export re-encodes its audio slice, so only full merges compare audio payloads.
+        result = verify(cfg['source'],temp,expected,args.mode=='merge' and span is None)
         result['output'].update(plan)
         result.update(mode=args.mode,configuration=cfg,command_argv=cmd,
                       source_sha256=sha(cfg['source']),output_sha256=sha(temp),
                       visual_review='pending: decode/frame/audio checks do not prove visual quality or lip sync')
+        if args.mode == 'merge':
+            result['scope'] = {'frames': list(span) if span else [0, info['frames']],
+                               'preview_encode': args.preview, 'deliverable': deliverable}
+        if not deliverable:
+            result['visual_review'] = ('not deliverable: partial/preview export for checking only; '
+                                       'final acceptance must use a full export without --frames/--preview')
         result['generated_sha256'] = {p['generated']:sha(p['generated']) for p in cfg.get('patches',[])}
         # Reserve both paths exclusively; remove only files created here on failure.
         with private_output(output, binary=True) as dest, private_output(report) as rpt:
             with temp.open('rb') as src:
                 shutil.copyfileobj(src, dest)
             json.dump(result, rpt, ensure_ascii=False, indent=2)
-    print(f'PASS: {output}\nReport: {report}')
+    print(f'PASS{"" if deliverable else " (check only, not deliverable)"}: {output}\nReport: {report}')
 
 
 if __name__ == '__main__':
