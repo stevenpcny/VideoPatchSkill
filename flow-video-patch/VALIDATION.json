@@ -1,14 +1,12 @@
 {
-  "package_version": "2.8",
+  "package_version": "2.9",
   "update_scope": [
-    "flow_patch.py: one FFmpeg decoding pass per file gives timestamps (demuxer time base), frame count and murmur3 frame hashes; output checks use it in strict (-xerror) mode instead of an ffprobe decode plus a separate -xerror decode; copy-unpatched reuses source hashes from the probe pass and the joined-stream check as the output check",
-    "issue #10: --copy-unpatched waits for background checks before any fallback (WinError 32), refuses up front when the container time base cannot hold frame times (Matroska ms); smoke test_20 covers early and post-join fallback",
-    "workflow: pre-filled *.visual-review.json and report tools inventory; qc_tools precheck; reading rules trimmed (policy on first use/version change, verification once per task); AGENT_ENTRY condensed; doctor -> --frames --preview -> full export; dry runs share the probe cache; tools/release.py"
+    "flow_patch.py: check-only exports (--frames) run per-frame crop/matte/affine checks only on exported frames; full merges and dry runs still check every patched frame; --frames interval checked before planning; smoke test_22"
   ],
-  "processing_scripts": "flow_patch.py changed; outputs byte-identical to v2.7",
+  "processing_scripts": "flow_patch.py changed; rendered frames unchanged (framemd5-identical to v2.8 on a real 1080p --frames export)",
   "tool_policy_scope": "Package version only",
   "upstream": {
-    "main_commit": "3b9a38d",
+    "main_commit": "2a61562",
     "status": "pending PR"
   },
   "current_static_verification": {
@@ -17,36 +15,81 @@
     "scripts_tests_changed": true,
     "requirements_unchanged": true,
     "allowlist_changes": "package_version only",
-    "zip": "built v2.8"
+    "zip": "built v2.9"
   },
   "current_behavioral_verification": {
     "date": "2026-10-30",
-    "scope": "synthetic fixtures only",
-    "linux_local": {
-      "platform": "Linux, 4 cores, FFmpeg 6.1.1",
-      "per_kernel_mode": {
-        "smoke_test": "21/21",
-        "security_test": "16/16",
-        "qc_tools_test": "6/6",
-        "color_pipeline_test": "9/9",
-        "remote_run_test": "4/4",
-        "ffmpeg_regression": "6/6"
-      }
+    "scope": "synthetic fixtures; one owner shot for timing and frame equality only",
+    "macos_local": {
+      "platform": "macOS (Darwin 25.4), 16 cores, NumPy kernels",
+      "smoke_test": "22/22 (1 skipped)",
+      "security_test": "16/16",
+      "qc_tools_test": "6/6",
+      "color_pipeline_test": "9/9",
+      "remote_run_test": "4/4",
+      "ffmpeg_regression": "6/6"
     },
-    "equivalence": "merge outputs byte-identical to v2.7 (1080p 2-minute full and copy-unpatched, 4K fixture); seeking reader still byte-identical on four fixtures",
-    "speed_synthetic": {
-      "1080p_2min_full_merge": "98.4 s -> 81.3 s",
-      "1080p_2min_copy_unpatched": "35.6 s -> 18.6 s",
-      "4k_120_frames": "about unchanged (verification is a small share)"
-    },
-    "owner_windows_report_v2_7": "issue #10: Windows 11, FFmpeg 9.0.2, Intel Arc Pro B70: QSV preview exports at 1080p/4K succeeded but were slower than libx264 on the sample, 8K rejected by the driver; 8K CPU check export about 37 s, about 5.4 GiB summed working set; VLC 3.0.24 and Resolve 21.0.4.5 played and seeked the parameter-set-switching sample; GOP fallback WinError 32 reproduced (fixed here)",
-    "owner_windows_report_v2_7_high_priority": "issue #10 comment (main 3b9a38d): 9/9 pass. GOP copy with 2/4 render processes and QSV (preview) with segments or GOP copy; copied frames independently SHA-256 identical, rendered GOPs frame-aligned with no patch-window drift; real 4K 361 frames 93 s, real 8K 189 frames 248 s (~9.5 GiB summed RSS), 60 s 4K full re-encode 384 s; stream-copied loop with timestamp gaps correctly rejected. Ran v2.7, so the issue #10 fix awaits #11 section B."
+    "speed_owner_shot": {
+      "setup": "1080p 24 fps, 265 frames, 4 multiband patches with per-frame affine keyframes",
+      "check_24_frames_preview": "23 s -> 12.2 s",
+      "check_2_frames_preview": "16.3 s -> 2.6 s",
+      "full_merge": "unchanged (all frames still checked)"
+    }
   },
   "limits": [
     "Check --copy-unpatched outputs in the actual player/editor before delivery",
     "No real Flow generation or visual acceptance in release tests"
   ],
   "prior_validation": {
+    "v2.8": {
+      "package_version": "2.8",
+      "update_scope": [
+        "flow_patch.py: one FFmpeg decoding pass per file gives timestamps (demuxer time base), frame count and murmur3 frame hashes; output checks use it in strict (-xerror) mode instead of an ffprobe decode plus a separate -xerror decode; copy-unpatched reuses source hashes from the probe pass and the joined-stream check as the output check",
+        "issue #10: --copy-unpatched waits for background checks before any fallback (WinError 32), refuses up front when the container time base cannot hold frame times (Matroska ms); smoke test_20 covers early and post-join fallback",
+        "workflow: pre-filled *.visual-review.json and report tools inventory; qc_tools precheck; reading rules trimmed (policy on first use/version change, verification once per task); AGENT_ENTRY condensed; doctor -> --frames --preview -> full export; dry runs share the probe cache; tools/release.py"
+      ],
+      "processing_scripts": "flow_patch.py changed; outputs byte-identical to v2.7",
+      "tool_policy_scope": "Package version only",
+      "upstream": {
+        "main_commit": "3b9a38d",
+        "status": "pending PR"
+      },
+      "current_static_verification": {
+        "date": "2026-10-30",
+        "privacy_scan_new_text": "pass",
+        "scripts_tests_changed": true,
+        "requirements_unchanged": true,
+        "allowlist_changes": "package_version only",
+        "zip": "built v2.8"
+      },
+      "current_behavioral_verification": {
+        "date": "2026-10-30",
+        "scope": "synthetic fixtures only",
+        "linux_local": {
+          "platform": "Linux, 4 cores, FFmpeg 6.1.1",
+          "per_kernel_mode": {
+            "smoke_test": "21/21",
+            "security_test": "16/16",
+            "qc_tools_test": "6/6",
+            "color_pipeline_test": "9/9",
+            "remote_run_test": "4/4",
+            "ffmpeg_regression": "6/6"
+          }
+        },
+        "equivalence": "merge outputs byte-identical to v2.7 (1080p 2-minute full and copy-unpatched, 4K fixture); seeking reader still byte-identical on four fixtures",
+        "speed_synthetic": {
+          "1080p_2min_full_merge": "98.4 s -> 81.3 s",
+          "1080p_2min_copy_unpatched": "35.6 s -> 18.6 s",
+          "4k_120_frames": "about unchanged (verification is a small share)"
+        },
+        "owner_windows_report_v2_7": "issue #10: Windows 11, FFmpeg 9.0.2, Intel Arc Pro B70: QSV preview exports at 1080p/4K succeeded but were slower than libx264 on the sample, 8K rejected by the driver; 8K CPU check export about 37 s, about 5.4 GiB summed working set; VLC 3.0.24 and Resolve 21.0.4.5 played and seeked the parameter-set-switching sample; GOP fallback WinError 32 reproduced (fixed here)",
+        "owner_windows_report_v2_7_high_priority": "issue #10 comment (main 3b9a38d): 9/9 pass. GOP copy with 2/4 render processes and QSV (preview) with segments or GOP copy; copied frames independently SHA-256 identical, rendered GOPs frame-aligned with no patch-window drift; real 4K 361 frames 93 s, real 8K 189 frames 248 s (~9.5 GiB summed RSS), 60 s 4K full re-encode 384 s; stream-copied loop with timestamp gaps correctly rejected. Ran v2.7, so the issue #10 fix awaits #11 section B."
+      },
+      "limits": [
+        "Check --copy-unpatched outputs in the actual player/editor before delivery",
+        "No real Flow generation or visual acceptance in release tests"
+      ]
+    },
     "v2.7": {
       "package_version": "2.7",
       "update_scope": [
