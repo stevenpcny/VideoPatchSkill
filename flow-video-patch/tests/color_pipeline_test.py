@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 import numpy as np
 
@@ -153,6 +154,26 @@ class ColorPipeline(unittest.TestCase):
                'colour_primaries=9:transfer_characteristics=1:matrix_coefficients=9:video_full_range_flag=0')
         with self.assertRaises(ValueError):
             fp.probe(bad)
+
+    def test_09_outside_support_luma_is_decoded_source(self):
+        # Pre-encode frames: luma outside the matte is the decoded source exactly, inside it changes.
+        cfg = dict(schema_version=1,source=str(self.hd),source_size=[W,H],fps=24,
+                   patches=[dict(generated=str(self.hd),target=[0,12],crop=[33,17,128,72],
+                                 work_size=[256,144],matte=dict(region=[40,20,176,104],feather=6),
+                                 blend='alpha',gain_bgr=[1.3,1.3,1.3])])
+        info = fp.validate_source(cfg); raw = self.base/'pre_encode.yuv'
+        raw_encoder = lambda path, size, *a, **k: [fp.FFMPEG,'-v','error','-f','rawvideo','-pix_fmt','yuv420p',
+                                                  '-s',f'{size[0]}x{size[1]}','-i','pipe:0','-f','rawvideo',str(path)]
+        with unittest.mock.patch.object(fp,'encoder',raw_encoder):
+            fp.process(cfg,info,'merge',raw,fp.merge_plan(cfg,info))
+        got = np.fromfile(raw,np.uint8).reshape(-1,H*W*3//2)[:,:H*W].reshape(-1,H,W)
+        src = np.frombuffer(subprocess.run([fp.FFMPEG,'-v','error','-i',str(self.hd),'-f','rawvideo',
+                                            '-pix_fmt','yuv420p','-'],stdout=subprocess.PIPE,check=True).stdout,
+                            np.uint8).reshape(-1,H*W*3//2)[:,:H*W].reshape(-1,H,W)
+        crop = np.zeros((H,W),bool); crop[17:17+72,33:33+128] = True
+        self.assertTrue(np.array_equal(got[:,~crop],src[:,~crop]))
+        centre = got[:,17+25:17+47,33+40:33+88].astype(int)-src[:,17+25:17+47,33+40:33+88]
+        self.assertGreater(np.abs(centre).mean(),5)
 
 
 if __name__ == '__main__':

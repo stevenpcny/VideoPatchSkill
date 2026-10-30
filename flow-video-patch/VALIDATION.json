@@ -1,9 +1,11 @@
 {
-  "package_version": "2.3",
+  "package_version": "2.4",
   "update_scope": [
-    "return-fit-assessment.md section 3: whole-person garment mask row-fill, bottom band avoids elbow/cuff/hand, union boundary pushed off original outline, full-res local contact sheets",
-    "hd-relay-lessons.md section 13: HD strip pasted back onto static still (relay size choice, fixed deformation field correction, rectangle vs contour route, side-only feather and seam colour, review aids)",
-    "SKILL.md principles 27-28 and entry pointer; README/TOOL_POLICY version only"
+    "references/remote-worker.md: LAN worker execution, enabled only by a user-local profile outside the package",
+    "flow_patch.py: FLOW_ENCODE_THREADS (libx264 threads, default 4), FLOW_PROCESS_THREADS (banded colour conversion, bit-identical)",
+    "flow_patch.py: decode prefetch and encoder-writer threads; merge converts only patch regions; outside-support luma equals decoded source before encoding; encoder log reported on mid-run exit",
+    "tests: color_pipeline_test_09 outside-support luma, security_test encode-thread bounds",
+    "SKILL.md entry for remote worker; SECURITY.md env vars"
   ],
   "processing_scripts": "All scripts, tests and requirements byte-identical to v2.2",
   "tool_policy_scope": "Package version only; no new tool/runtime/codec/service authorization",
@@ -13,31 +15,75 @@
     "status": "pending PR, not released on main"
   },
   "current_static_verification": {
-    "date": "2026-10-27",
-    "relative_links_resolve": 101,
-    "broken_links": 0,
-    "privacy_scan_new_text": "pass (no project names, file names, paths)",
-    "scripts_tests_requirements_unchanged": true,
+    "date": "2026-10-29",
+    "privacy_scan_new_text": "pass (no machine names, accounts, addresses or user paths)",
+    "scripts_tests_changed": true,
+    "requirements_unchanged": true,
     "allowlist_changes": "package_version only",
-    "zip": "not rebuilt this round"
+    "zip": "rebuilt v2.4"
   },
   "current_behavioral_verification": {
-    "date": "2026-10-27",
-    "platform": "macOS",
-    "scope": "synthetic fixtures only; executed in local skill directory",
-    "smoke_test": "8/8 pass",
-    "security_test": "10/10 pass",
-    "qc_tools_test": "4/4 pass",
-    "color_pipeline_test": "8/8 pass",
-    "ffmpeg_regression": "6/6 pass",
-    "total": "36/36 pass"
+    "date": "2026-10-29",
+    "scope": "synthetic fixtures only",
+    "macOS": {
+      "smoke_test": "8/8",
+      "security_test": "11/11",
+      "qc_tools_test": "4/4",
+      "color_pipeline_test": "9/9",
+      "ffmpeg_regression": "6/6"
+    },
+    "windows_11": {
+      "runtime": "Python 3.13.16, NumPy 2.5.4, opencv-python 5.0.0, FFmpeg 9.0.2 (gyan.dev full)",
+      "PYTHONUTF8": "required",
+      "smoke_test": "8/8",
+      "security_test": "10/11 (test_replacement_file_survives_failure_cleanup: WinError 32, Windows forbids renaming an open file; simulated race cannot occur)",
+      "qc_tools_test": "4/4",
+      "color_pipeline_test": "9/9",
+      "ffmpeg_regression": "6/6"
+    },
+    "equivalence": "banded colour conversion and prefetch/writer threads give byte-identical output to the preceding step on the 4K synthetic merge; region-only conversion changes only outside-support pixels, whose luma now equals the decoded source",
+    "speed_4k_synthetic_merge": "Windows 24-core worker: 128.0 s -> 53.7-55.6 s; macOS after change 59.7 s"
   },
   "limits": [
     "Synthetic regression is not real-media visual acceptance",
-    "No Resolve rendering, reopening or cross-machine handoff tested in this update",
+    "No real-media timing yet",
+    "FFmpeg 9.0.2 validated by synthetic tests only",
+    "QSV/hardware encoding not evaluated or authorised",
     "No new dependency security/license audit; historical open items remain"
   ],
   "prior_validation": {
+    "v2.3": {
+      "update_scope": [
+        "return-fit-assessment.md section 3: whole-person garment mask row-fill, bottom band avoids elbow/cuff/hand, union boundary pushed off original outline, full-res local contact sheets",
+        "hd-relay-lessons.md section 13: HD strip pasted back onto static still (relay size choice, fixed deformation field correction, rectangle vs contour route, side-only feather and seam colour, review aids)",
+        "SKILL.md principles 27-28 and entry pointer; README/TOOL_POLICY version only"
+      ],
+      "static": {
+        "date": "2026-10-27",
+        "relative_links_resolve": 101,
+        "broken_links": 0,
+        "privacy_scan_new_text": "pass (no project names, file names, paths)",
+        "scripts_tests_requirements_unchanged": true,
+        "allowlist_changes": "package_version only",
+        "zip": "not rebuilt this round"
+      },
+      "behavioral": {
+        "date": "2026-10-27",
+        "platform": "macOS",
+        "scope": "synthetic fixtures only; executed in local skill directory",
+        "smoke_test": "8/8 pass",
+        "security_test": "10/10 pass",
+        "qc_tools_test": "4/4 pass",
+        "color_pipeline_test": "8/8 pass",
+        "ffmpeg_regression": "6/6 pass",
+        "total": "36/36 pass"
+      },
+      "limits": [
+        "Synthetic regression is not real-media visual acceptance",
+        "No Resolve rendering, reopening or cross-machine handoff tested in this update",
+        "No new dependency security/license audit; historical open items remain"
+      ]
+    },
     "v2.2": {
       "update_scope": [
         "Add references/return-fit-assessment.md: pre-composite fit check (file/shot identity, trajectory time mapping, head-excluded global affine, per-region optical-flow residual, fixed colour gain with holdout, visual blink check), seam placement rules with band-weighted mismatch scoring, whole-person paste-back route, tight mic/hand masks",
