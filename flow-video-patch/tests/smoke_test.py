@@ -384,6 +384,32 @@ class Smoke(unittest.TestCase):
         rejected=cli('merge','--config',cfg,'--output',self.base/'x2.mp4','--copy-unpatched','--frames','0:4',ok=False)
         self.assertIn('full merges',rejected.stderr)
 
+    def test_20_copy_unpatched_millisecond_source_and_late_fallback(self):
+        # Matroska milliseconds cannot hold 23.976 fps frame times: refused before any work.
+        src=self.base/'ms.mkv'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=192x128:r=24000/1001','-frames:v','96',
+                '-c:v','libx264','-pix_fmt','yuv420p','-x264-params','keyint=24:min-keyint=24:scenecut=0:bframes=3',src])
+        p=self.patch(generated=str(src),target=[26,34],generated_start=26,frame_map=None,crop=[0,0,192,128],work_size=[192,128])
+        p.pop('frame_map')
+        cfg=self.config('ms',source=str(src),source_size=[192,128],fps='24000/1001',patches=[p])
+        out=self.base/'ms-copy.mp4'
+        r=cli('merge','--config',cfg,'--output',out,'--copy-unpatched')
+        self.assertIn('cannot hold',r.stderr)
+        self.assertEqual(fp.probe(out)['frames'],96)
+        # Without that early rule the joined stream fails its timing check after the join; the fallback
+        # must then remove the joined file and render in full (Windows: no process may still hold it).
+        out2=self.base/'ms-late.mp4'
+        code=("import sys; sys.path.insert(0, sys.argv[1]); import flow_patch as fp; "
+              "fp.copy_unpatched_reason = lambda info: None; sys.argv = sys.argv[1:2] + sys.argv[2:]; fp.main()")
+        r=subprocess.run([sys.executable,'-c',code,str(ROOT/'scripts'),'merge','--config',str(cfg),'--output',str(out2),
+                          '--copy-unpatched'],capture_output=True,text=True,encoding='utf-8')
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIn('joined stream failed',r.stderr)
+        self.assertEqual(fp.probe(out2)['frames'],96)
+        self.assertEqual(json.loads(out2.with_suffix('.report.json').read_text(encoding='utf-8'))['copy_unpatched'],
+                         {'used':False})
+        self.assertFalse(any(self.base.glob('.flow-patch-*')),'temporary folder left behind')
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

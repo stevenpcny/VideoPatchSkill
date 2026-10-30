@@ -1,7 +1,8 @@
 {
   "package_version": "2.8",
   "update_scope": [
-    "flow_patch.py: one FFmpeg decoding pass per file gives timestamps (demuxer time base), frame count and murmur3 frame hashes; output checks use it in strict (-xerror) mode instead of an ffprobe decode plus a separate -xerror decode; copy-unpatched reuses source hashes from the probe pass and the joined-stream check as the output check"
+    "flow_patch.py: one FFmpeg decoding pass per file gives timestamps (demuxer time base), frame count and murmur3 frame hashes; output checks use it in strict (-xerror) mode instead of an ffprobe decode plus a separate -xerror decode; copy-unpatched reuses source hashes from the probe pass and the joined-stream check as the output check",
+    "issue #10: --copy-unpatched waits for background checks before any fallback (WinError 32), refuses up front when the container time base cannot hold frame times (Matroska ms); smoke test_20 covers early and post-join fallback"
   ],
   "processing_scripts": "flow_patch.py changed; outputs byte-identical to v2.7",
   "tool_policy_scope": "Package version only",
@@ -23,7 +24,7 @@
     "linux_local": {
       "platform": "Linux, 4 cores, FFmpeg 6.1.1",
       "per_kernel_mode": {
-        "smoke_test": "19/19",
+        "smoke_test": "20/20",
         "security_test": "16/16",
         "qc_tools_test": "5/5",
         "color_pipeline_test": "9/9",
@@ -36,7 +37,8 @@
       "1080p_2min_full_merge": "98.4 s -> 81.3 s",
       "1080p_2min_copy_unpatched": "35.6 s -> 18.6 s",
       "4k_120_frames": "about unchanged (verification is a small share)"
-    }
+    },
+    "owner_windows_report_v2_7": "issue #10: Windows 11, FFmpeg 9.0.2, Intel Arc Pro B70: QSV preview exports at 1080p/4K succeeded but were slower than libx264 on the sample, 8K rejected by the driver; 8K CPU check export about 37 s, about 5.4 GiB summed working set; VLC 3.0.24 and Resolve 21.0.4.5 played and seeked the parameter-set-switching sample; GOP fallback WinError 32 reproduced (fixed here)"
   },
   "limits": [
     "Check --copy-unpatched outputs in the actual player/editor before delivery",

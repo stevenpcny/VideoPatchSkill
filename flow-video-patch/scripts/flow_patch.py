@@ -385,7 +385,7 @@ def bgr_to_yuv420(bgr, color):
 _PROBED = {}
 
 
-PROBE_CACHE_FORMAT = 1
+PROBE_CACHE_FORMAT = 2  # 2: probe info gained time_base
 
 
 def cached_probe(path, cache):
@@ -477,7 +477,8 @@ def _probe(path, strict=False):
               'yuv444p': '4:4:4', 'yuvj444p': '4:4:4'}.get(s['pix_fmt'], 'rgb')
     return {'size': [s['width'], s['height']], 'fps': str(fps), 'frames': len(times),
             'audio': audio is not None, 'color': color_info(s), 'on_frame_grid': grid,
-            'chroma': chroma, 'streams': counts, 'codec': s.get('codec_name')}
+            'chroma': chroma, 'streams': counts, 'codec': s.get('codec_name'),
+            'time_base': s.get('time_base')}
 
 
 def output_notices(info, mode):
@@ -1144,6 +1145,12 @@ def copy_unpatched_reason(info):
         return f"source chroma is {info['chroma']}, not 4:2:0"
     if not info.get('on_frame_grid'):
         return 'source timestamps are not on the frame grid'
+    # Copied packets keep the source's timestamps, so its time base must hold every frame time exactly;
+    # Matroska's milliseconds cannot at 23.976 or 60 fps, which would fail the joined-stream check.
+    tb = Fraction(info.get('time_base') or '0/1')
+    if not tb or (1/Fraction(info['fps'])/tb).denominator != 1:
+        return (f"source time base {info.get('time_base')} cannot hold {info['fps']} fps frame times exactly "
+                '(remux to MP4/MOV first to use --copy-unpatched)')
     return None
 
 
@@ -1197,7 +1204,9 @@ def merge_copy_unpatched(cfg, info, plans, out, preset=None):
     try:
         return _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, work, checks)
     finally:
-        checks.shutdown(wait=False, cancel_futures=True)
+        # Wait for background checks, so no FFmpeg still holds a file when a fallback deletes or
+        # rewrites it (Windows refuses to remove open files: issue #10).
+        checks.shutdown(wait=True, cancel_futures=True)
 
 
 def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, work, checks):
