@@ -445,7 +445,17 @@ class Smoke(unittest.TestCase):
         with self.assertRaises(ValueError):
             fp.probe(plain)
         out=self.base/'regrid.mp4'
-        r=cli('regrid','--source',src,'--output',out)
+        p=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'regrid','--source',str(src),'--output',str(out)],
+                         capture_output=True,text=True,encoding='utf-8')
+        if p.returncode:  # report what this FFmpeg build wrote, to diagnose build differences
+            dbg=self.base/'regrid-debug.mp4'
+            fp.run([fp.FFMPEG,'-v','error','-copyts','-i',src,'-map','0:v:0','-c','copy','-bsf:v',
+                    'setts=pts=round(PTS*TB*24000/1001):dts=round(DTS*TB*24000/1001):duration=1:time_base=1001/24000',
+                    '-video_track_timescale','24000',dbg])
+            rows=fp.run([fp.FFPROBE,'-v','error','-select_streams','v:0','-show_entries','packet=pts,dts,duration',
+                         '-of','csv=p=0',dbg]).decode().splitlines()
+            raise AssertionError(p.stderr+fp.tool_version(fp.FFMPEG)+'\n'+' '.join(rows[:6]+['...']+rows[-4:]))
+        r=p
         self.assertIn('frames and audio unchanged',r.stdout)
         rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
         self.assertEqual((rpt['frames'],rpt['fps'],rpt['audio_payload_identical']),(96,'24000/1001',True))

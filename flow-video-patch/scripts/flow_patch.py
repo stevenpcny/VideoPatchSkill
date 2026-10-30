@@ -473,7 +473,9 @@ def _probe(path, strict=False):
             'Bake rotation into pixels first')
     require(s.get('sample_aspect_ratio', '1:1') in ('1:1', 'N/A'), 'Require square pixels')
     fps = Fraction(s['avg_frame_rate'])
-    require(fps > 0 and fps == Fraction(s['r_frame_rate']), 'Require constant frame rate')
+    require(fps > 0 and fps == Fraction(s['r_frame_rate']),
+            f"Require constant frame rate (avg_frame_rate {s['avg_frame_rate']}, r_frame_rate {s['r_frame_rate']}, "
+            f"time_base {s.get('time_base')}, duration_ts {s.get('duration_ts')}, nb_frames {s.get('nb_frames')})")
     # Equal rate fields alone do not prove CFR. Check decoded timestamps; the same decoding pass
     # also hashes every frame for later bit-exact comparisons.
     times = decode_pass(path, strict)[0]
