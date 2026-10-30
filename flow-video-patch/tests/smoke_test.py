@@ -433,6 +433,20 @@ class Smoke(unittest.TestCase):
         out.unlink(); out.with_suffix('.report.json').unlink()
         self.assertIn('exists',cli('merge','--config',cfg,'--output',out,ok=False).stderr)
 
+    def test_22_check_export_checks_only_its_frames(self):
+        # Keyframed affine that leaves holes in the patch support from frame 20 on.
+        shift=[dict(frame=0,value=[1,0,0,0,1,0]),dict(frame=19,value=[1,0,0,0,1,0]),
+               dict(frame=20,value=[1,0,40,0,1,0])]
+        cfg=self.config('span-check',patches=[self.patch(source_to_generated_affine=shift)])
+        cli('merge','--config',cfg,'--output',self.base/'span-ok.mp4','--frames','2:8','--preview')
+        late=cli('merge','--config',cfg,'--output',self.base/'span-late.mp4','--frames','18:22','--preview',ok=False)
+        self.assertIn('source frame 20',late.stderr)
+        # Deliverable and dry runs still check every patched frame.
+        full=cli('merge','--config',cfg,'--output',self.base/'span-full.mp4',ok=False)
+        self.assertIn('source frame 20',full.stderr)
+        self.assertIn('source frame 20',cli('merge','--config',cfg,'--output',self.base/'span-dry.mp4',
+                                            '--dry-run',ok=False).stderr)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
