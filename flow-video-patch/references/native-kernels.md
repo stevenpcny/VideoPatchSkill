@@ -15,6 +15,17 @@ cd native
 cargo build --release
 ```
 
+Windows 使用 GNU 工具链（`x86_64-pc-windows-gnu`）且目录含中文等非 ASCII 字符时，默认的 MinGW `ld` 可能把输出路径变成 `???` 并报 `cannot open output file ... Invalid argument`。同一官方工具链自带的 `rust-lld` 已实测可用（PowerShell，当前进程内设置，不改系统 PATH）：
+
+```powershell
+$rustBin = Join-Path (rustc --print sysroot) 'lib/rustlib/x86_64-pc-windows-gnu/bin'
+$env:PATH = "$rustBin;$env:PATH"
+$env:RUSTFLAGS = '-C linker=rust-lld.exe'
+cargo build --release --locked --offline --manifest-path native/Cargo.toml
+```
+
+MSVC 工具链未在中文路径下验证。
+
 产物位于 `native/target/release/`（Linux `libflow_kernels.so`、macOS `libflow_kernels.dylib`、Windows `flow_kernels.dll`），不入库、不打包。
 
 ## 使用

@@ -16,7 +16,7 @@
 {"ssh_alias": "worker", "task_root": "D:/flow-tasks", "skill_dir": "D:/skills/flow-video-patch", "python": "python"}
 ```
 
-`ssh_alias` 是 `~/.ssh/config` 中的 Host 别名。命令：
+`ssh_alias` 是 `~/.ssh/config` 中的 Host 别名。`python` 可写工作机 PATH 中的名称，或不含空格的完整路径（如 `C:/Python313/python.exe`）；路径含空格时 cmd.exe 与 sh 的引号规则不同，请把该目录加入工作机 PATH 后写名称。命令：
 
 ```bash
 python scripts/remote_run.py check
@@ -25,9 +25,9 @@ python scripts/remote_run.py run job-01 flow_patch merge --config merge.json --o
 python scripts/remote_run.py pull job-01 patched.mp4 patched.report.json --dest ./job-01
 ```
 
-- `check`：工作机运行 doctor，并比对两边 `SHA256SUMS.json`，技能副本不同即停止。
+- `check`：先核对本机副本与其 `SHA256SUMS.json`，再在工作机逐个计算清单所列文件的 SHA-256 并与本机清单比对；任一缺失、不同或清单含不安全路径即停止，不运行工作机上的任何脚本。全部一致后才运行 doctor。
 - `push`／`pull`：文件经 ssh 数据流传输，两端比对 SHA-256；不覆盖已有文件，不一致的取回副本自动删除。
-- `run`：只运行本包 `flow_patch`、`fit_patch`、`qc_tools`，工作目录为任务子目录；参数不得含绝对路径或 `..`。本地的 `FLOW_*` 设置（线程、分段、内核、CRF、编码器）随命令转发，其他环境变量不发送。
+- `run`：只运行本包 `flow_patch`、`fit_patch`、`qc_tools`，工作目录为任务子目录。参数（含 `--选项=值` 中的值）不得为绝对路径、盘符、UNC 或含 `..`；工作机再把含路径分隔符的参数解析为实际路径，确认仍在任务目录内才运行。配置 JSON 中的媒体路径是另一信任边界，按 `flow_patch.py` 自身规则处理；这些检查不是操作系统沙箱。本地的 `FLOW_*` 设置（线程、分段、内核、CRF、编码器）随命令转发，其他环境变量不发送。
 - 不提供删除；清理工作机文件仍须用户确认后手动进行。
 
 ## 执行顺序
@@ -47,6 +47,7 @@ python scripts/remote_run.py pull job-01 patched.mp4 patched.report.json --dest 
 - 探测与校验：`probe` 只做一遍解码（原先两遍），原片与各返回片同时探测；成片校验中的探测、`-xerror` 全解码与两次音轨哈希并行执行，各项检查都不省略。
 - 读取器关闭：读取器提前结束时（返回片尾部有未用帧、分段结束）直接结束其解码进程。此前解码器被堵在管道写入上，要等满 5 秒终止超时；合成 4K 测试中返回片尾部多 10 帧时，单次合成由 50.8 s 降至 27.7 s，输出不变。
 - 分段多进程合成（可选）：`FLOW_SEGMENTS=N`（1–32，默认 1 不分段）把 `merge` 按帧区间切成 N 段（每段至少 12 帧），各段在独立进程中处理并编码（只含画面），再用 concat 无重编码拼接、一次复制原音轨，最后整片校验（帧数、恒定帧率、全解码、音轨载荷哈希）。送进编码器的像素与单进程相同，但每段独立编码、段首为关键帧，码流与单进程不逐字节相同；同一任务的候选比较保持同一取值。各段的 `FLOW_PROCESS_THREADS` 未设置时按核数平分；`FLOW_ENCODE_THREADS` 为每段的编码线程，总线程约为两者之积。每段读取器从该段首帧开始按帧号取帧（不按时间戳寻址），段首之前的帧仍要解码，段数越多重复解码越多。4 核机器上实测无收益（1 段 26.9 s、2 段 26.3 s、4 段 30.4 s）；收益只在单进程用不满的多核机器上可能出现，须在工作机上实测后再定取值。
+- 只重编码有补丁的片段：`merge --copy-unpatched`（v2.7，见[参数与命令](parameters.md)）。长片配短补丁时收益最大，`FLOW_SEGMENTS` 同时让多个渲染块并行；1080p 2 分钟合成片 98.4 s → 35.6 s。
 - 读取器起点：探测确认每帧时间戳都在 `n/fps` 网格上（误差小于 1/4 帧）的文件，读取器用 `-ss` 定位到起点帧与前一帧的正中间，不再从片头解码；否则按解码帧号选取。四种合成样例（23.976 带 B 帧、25p 长 GOP、30p、60p 全 I 帧 MOV）在关键帧前后、片尾等起点与顺序解码逐字节相同。
 - 检查用导出：`--frames`／`--preview` 见[参数与命令](parameters.md)。1080p、2 分钟（2880 帧）合成片中检查片尾 30 帧：v2.4 只能整片合成 125.9 s；现在首次 10.2 s，探测缓存命中后 3.1 s。
 - 解码与写出：每个读取器在后台线程预读最多 3 帧，编码输入由后台线程写出，与逐帧计算重叠；帧顺序与字节不变。编码器中途退出时等待其结束并报告编码器日志。

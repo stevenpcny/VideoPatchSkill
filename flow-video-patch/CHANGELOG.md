@@ -2,6 +2,17 @@
 
 按新到旧排列。两条历史发版线（仓库线、本地线）在 v2.0 合并，其 v1.4、v1.5 编号指不同内容，按线别标注。
 
+## v2.7
+
+- `merge --copy-unpatched`：按源片关键帧切块，未修补的 GOP 原样复制码流，只渲染、编码含补丁帧的 GOP（B 帧重排延迟与源片一致），拼接后整片探测，并逐帧比对复制部分与源片的 murmur3 解码哈希；不满足条件或任一检查失败即自动整片渲染并给出 NOTICE。适用于 8 位 4:2:0 H.264、时间戳规整的源片。1080p 2 分钟合成片、补丁 130 帧：98.4 s → 35.6 s，补丁外 2750 帧与源片逐比特相同。交付前须在实际播放器／剪辑软件中确认码流中途切换参数集的兼容性。见[参数与命令](references/parameters.md)。
+- Windows 实测反馈（issue #8）修正：
+  - `remote_run.py run`：`--选项=值` 的值同样检查绝对路径、盘符、UNC 与 `..`；工作机再把含路径分隔符的参数解析为实际路径，不在任务目录内即拒绝。
+  - `remote_run.py check`：先核对本机副本与清单，再在工作机逐个计算清单所列文件的 SHA-256 并比对，任一缺失或不同即停止，doctor 只在全部一致后运行（此前只比较清单文件本身）。
+  - `remote_run.py` 的 `python` 可写不含空格的完整路径。
+  - security_test 拆分符号链接与防覆盖用例；Windows 普通账户无权创建符号链接（WinError 1314）时只跳过前者。
+  - native-kernels.md 补充 Windows GNU 工具链在中文路径下改用 `rust-lld` 的已验证配置；validation.md 的 v1.2 平台说明归入历史。
+- 测试：smoke 19（新增 GOP 复制在中段与片头、条件不符自动回退）、security 16、remote_run 4。
+
 ## v2.6
 
 经包所有者批准新增三项可选组件，均默认不改变既有行为，范围记录在 `TOOL_POLICY.json` 的 `optional_components_owner_approved`。

@@ -40,14 +40,24 @@ class Security(unittest.TestCase):
         media.write_bytes(b'not a video')
         self.assertEqual(fp.file_input(media)[-1], str(media.resolve()))
 
-    def test_symlinks_and_existing_outputs_refused(self):
+    def test_symlink_outputs_refused(self):
         target = self.base/'missing.json'
         link = self.base/'link.json'
-        link.symlink_to(target)
+        try:
+            link.symlink_to(target)
+        except OSError as e:
+            # Standard Windows accounts lack the symlink privilege (WinError 1314); the refusal
+            # cannot be exercised there. Any other failure is a real error.
+            if getattr(e, 'winerror', None) == 1314:
+                self.skipTest('Windows account cannot create symlinks (WinError 1314)')
+            raise
         with self.assertRaises(ValueError):
             with fp.private_output(link):
                 self.fail('Opened symlink')
         self.assertFalse(target.exists())
+
+    def test_existing_outputs_refused(self):
+        target = self.base/'existing.json'
         target.write_text('original',encoding='utf-8')
         with self.assertRaises(FileExistsError):
             with fp.private_output(target):

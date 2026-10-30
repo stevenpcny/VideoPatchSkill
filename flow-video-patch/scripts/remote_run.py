@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run this package's scripts on the one LAN worker named in the user's local profile.
 
-  check                         doctor on the worker; skill copy must match local SHA256SUMS.json
+  check                         every worker file must match this copy's SHA256SUMS.json, then doctor
   push TASK FILE...             copy files into the worker task folder; SHA-256 compared both ends
   run TASK SCRIPT [ARGS...]     run flow_patch / fit_patch / qc_tools there (cwd = task folder)
   pull TASK FILE... [--dest D]  copy results back; SHA-256 compared; never overwrites
@@ -45,12 +45,24 @@ def sha(p):
     return h.hexdigest()
 task = os.path.join(q['task_root'], q['task']) if q.get('task') else None
 op = q['op']
-if op == 'check':
-    sums = os.path.join(q['skill_dir'], 'SHA256SUMS.json')
+def inside(v):
+    if os.path.isabs(v) or v[1:2] == ':' or v.startswith(('/', '\\')):
+        return False
+    base = os.path.realpath(task)
+    return os.path.commonpath([base, os.path.realpath(os.path.join(base, v))]) == base
+if op == 'verify':
+    root = q['skill_dir']; sums = os.path.join(root, 'SHA256SUMS.json'); files, unsafe = {}, []
+    for rel in (json.load(open(sums, encoding='utf-8')) if os.path.isfile(sums) else []):
+        parts = rel.replace('\\', '/').split('/')
+        if os.path.isabs(rel) or ':' in rel or '..' in parts:
+            unsafe.append(rel); continue
+        f = os.path.join(root, *parts)
+        files[rel] = sha(f) if os.path.isfile(f) else None
+    print(json.dumps({'sums': sha(sums) if os.path.isfile(sums) else None, 'files': files, 'unsafe': unsafe}))
+elif op == 'doctor':
     r = subprocess.run([sys.executable, os.path.join(q['skill_dir'], 'scripts', 'flow_patch.py'), 'doctor'],
                        capture_output=True, text=True, encoding='utf-8')
-    print(json.dumps({'sums': sha(sums) if os.path.isfile(sums) else None, 'doctor': r.stdout, 'code': r.returncode,
-                      'error': r.stderr[-2000:]}))
+    print(json.dumps({'doctor': r.stdout, 'code': r.returncode, 'error': r.stderr[-2000:]}))
 elif op == 'push':
     os.makedirs(task, exist_ok=True)
     path = os.path.join(task, q['name'])
@@ -66,6 +78,10 @@ elif op == 'pull':
         for b in iter(lambda: f.read(1 << 20), b''):
             sys.stdout.buffer.write(b)
 elif op == 'run':
+    for a in q['args']:
+        for v in [a] + ([a.split('=', 1)[1]] if a.startswith('-') and '=' in a else []):
+            if (any(c in v for c in '/\\') or v == '..' or v[1:2] == ':') and not inside(v):
+                sys.exit('Refused on the worker: argument leaves the task folder: ' + a)
     os.environ.update(q['env'])
     script = os.path.join(q['skill_dir'], 'scripts', q['script'] + '.py')
     sys.exit(subprocess.run([sys.executable, script] + q['args'], cwd=task).returncode)
@@ -79,7 +95,9 @@ def profile():
             'Profile needs ssh_alias, task_root and skill_dir')
     require(re.fullmatch(r'[A-Za-z0-9._-]+', p['ssh_alias']) is not None,
             'ssh_alias must be a plain ~/.ssh/config Host alias')
-    require(re.fullmatch(r'[A-Za-z0-9._/-]+', p.get('python', 'python')) is not None, 'Invalid python name')
+    # A full path is fine without spaces (cmd.exe quoting differs from sh); see remote-worker.md.
+    require(re.fullmatch(r'[A-Za-z0-9._/\\:-]+', p.get('python', 'python')) is not None,
+            'Invalid python: use a name on the worker PATH or a full path without spaces')
     return p
 
 
@@ -119,12 +137,20 @@ def plain_name(value):
 
 
 def cmd_check(p, a):
-    r = answer(ssh(p, {'op': 'check'}, capture_output=True))
-    local = sha_file(Path(__file__).resolve().parents[1]/'SHA256SUMS.json')
-    require(r['code'] == 0, 'Worker doctor failed: ' + r['error'])
-    require(r['sums'] == local, 'Worker skill copy differs from this one (SHA256SUMS.json); sync it first')
-    print(r['doctor'], end='')
-    print('PASS: worker skill copy matches; compare the versions above with the profile record')
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads((root/'SHA256SUMS.json').read_text(encoding='utf-8'))
+    local_bad = [k for k, v in manifest.items() if not (root/k).is_file() or sha_file(root/k) != v]
+    require(not local_bad, 'This copy does not match its own SHA256SUMS.json: '+', '.join(local_bad[:10]))
+    # Hash every listed file on the worker before running anything from it.
+    r = answer(ssh(p, {'op': 'verify'}, capture_output=True))
+    require(not r['unsafe'], 'Worker SHA256SUMS.json lists unsafe paths: '+', '.join(r['unsafe'][:10]))
+    require(r['sums'] == sha_file(root/'SHA256SUMS.json'), 'Worker SHA256SUMS.json differs from this one; sync first')
+    differ = sorted(k for k in manifest if r['files'].get(k) != manifest[k])
+    require(not differ, 'Worker files missing or different from the manifest: '+', '.join(differ[:10]))
+    d = answer(ssh(p, {'op': 'doctor'}, capture_output=True))
+    require(d['code'] == 0, 'Worker doctor failed: ' + d['error'])
+    print(d['doctor'], end='')
+    print(f'PASS: all {len(manifest)} worker files match; compare the versions above with the profile record')
 
 
 def cmd_push(p, a):
@@ -137,11 +163,18 @@ def cmd_push(p, a):
         print(f'pushed {name} {r["sha"]}')
 
 
+def leaves_task(value):
+    """Absolute, drive, UNC or parent-directory paths, on either platform."""
+    return (value.startswith(('/', '\\')) or re.match(r'^[A-Za-z]:', value) is not None
+            or '..' in re.split(r'[\\/]', value))
+
+
 def cmd_run(p, a):
     require(a.script in SCRIPTS, 'Only flow_patch, fit_patch and qc_tools run remotely')
     for arg in a.args:
-        require(not os.path.isabs(arg) and not re.match(r'^[A-Za-z]:', arg) and
-                '..' not in re.split(r'[\\/]', arg), f'Remote arguments stay inside the task folder: {arg}')
+        # --option=value carries a path after '=' too; the worker re-checks resolved paths.
+        values = [arg] + ([arg.split('=', 1)[1]] if arg.startswith('-') and '=' in arg else [])
+        require(not any(leaves_task(v) for v in values), f'Remote arguments stay inside the task folder: {arg}')
     env = {k: os.environ[k] for k in FORWARD if k in os.environ}
     code = ssh(p, {'op': 'run', 'task': a.task, 'script': a.script, 'args': a.args, 'env': env}).returncode
     raise SystemExit(code)
