@@ -1197,18 +1197,31 @@ def regrid(source, output):
                for kind in ('audio', 'subtitle', 'data', 'attachment')}
     n = fps.numerator
     timescale = n if n >= 1000 else 90000 if 90000 % n == 0 else n*-(-1000//n)
+    tb = f'{fps.denominator}/{fps.numerator}'
     snap = f'*TB*{fps.numerator}/{fps.denominator})'
-    cmd = [FFMPEG, '-v', 'error', '-n', '-copyts', *file_input(source), '-map', '0:v:0', '-map', '0:a?',
-           '-c', 'copy', '-bsf:v', f'setts=pts=round(PTS{snap}:dts=round(DTS{snap}:duration=1'
-           f':time_base={fps.denominator}/{fps.numerator}', '-video_track_timescale', str(timescale),
-           '-movflags', '+faststart', output]
-    run(cmd)
-    try:
-        out = probe(output, True)
-    except ValueError as e:
-        raise ValueError(f'Regridded output failed its check: {e}') from e
-    require(Fraction(out['fps']) == fps and out['frames'] == len(times) and out['on_frame_grid'],
-            'Regridded output does not match the source frame rate or frame count')
+    # setts changed meaning between FFmpeg releases: newer builds evaluate the expressions in the input
+    # time base and round them into time_base themselves; 6.x/7.0 take the result as already in
+    # time_base. Each form is tried in turn and only one whose output passes every check is kept.
+    recipes = [f'setts=pts=PTS:dts=DTS:time_base={tb}',
+               f'setts=pts=round(PTS{snap}:dts=round(DTS{snap}:duration=1:time_base={tb}']
+    failures = []
+    for recipe in recipes:
+        cmd = [FFMPEG, '-v', 'error', '-n', '-copyts', *file_input(source), '-map', '0:v:0', '-map', '0:a?',
+               '-c', 'copy', '-bsf:v', recipe, '-video_track_timescale', str(timescale),
+               '-movflags', '+faststart', output]
+        try:
+            run(cmd)
+            out = probe(output, True)
+            require(Fraction(out['fps']) == fps and out['frames'] == len(times) and out['on_frame_grid'],
+                    'frame rate or frame count differs from the source')
+            break
+        except (ValueError, subprocess.CalledProcessError) as e:
+            failures.append(f'{recipe}: {e}')
+            forget(output)
+            with contextlib.suppress(FileNotFoundError):
+                Path(output).unlink()
+    else:
+        raise ValueError('Regridded output failed its check with every setts form:\n' + '\n'.join(failures))
     require(frame_hashes(output) == decode_pass(source)[1], 'Regridded frames differ from the source')
     if streams['audio']:
         require(audio_hash(output) == audio_hash(source), 'Regridded audio payload differs from the source')
@@ -1217,7 +1230,7 @@ def regrid(source, output):
             'max_timestamp_shift_ms': round(shift*1000, 3), 'decoded_frames_identical': True,
             'audio_payload_identical': bool(streams['audio']) or None, 'audio_tracks': streams['audio'],
             'not_carried': dropped, 'copy_unpatched_eligible': copy_unpatched_reason(out) is None,
-            'command_argv': [str(x) for x in cmd]}
+            'setts': recipe, 'command_argv': [str(x) for x in cmd]}
 
 
 def keyframe_indices(path, fps, frames):

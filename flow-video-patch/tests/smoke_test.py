@@ -445,17 +445,7 @@ class Smoke(unittest.TestCase):
         with self.assertRaises(ValueError):
             fp.probe(plain)
         out=self.base/'regrid.mp4'
-        p=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'regrid','--source',str(src),'--output',str(out)],
-                         capture_output=True,text=True,encoding='utf-8')
-        if p.returncode:  # report what this FFmpeg build wrote, to diagnose build differences
-            dbg=self.base/'regrid-debug.mp4'
-            fp.run([fp.FFMPEG,'-v','error','-copyts','-i',src,'-map','0:v:0','-c','copy','-bsf:v',
-                    'setts=pts=round(PTS*TB*24000/1001):dts=round(DTS*TB*24000/1001):duration=1:time_base=1001/24000',
-                    '-video_track_timescale','24000',dbg])
-            rows=fp.run([fp.FFPROBE,'-v','error','-select_streams','v:0','-show_entries','packet=pts,dts,duration',
-                         '-of','csv=p=0',dbg]).decode().splitlines()
-            raise AssertionError(p.stderr+fp.tool_version(fp.FFMPEG)+'\n'+' '.join(rows[:6]+['...']+rows[-4:]))
-        r=p
+        r=cli('regrid','--source',src,'--output',out)
         self.assertIn('frames and audio unchanged',r.stdout)
         rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
         self.assertEqual((rpt['frames'],rpt['fps'],rpt['audio_payload_identical']),(96,'24000/1001',True))
@@ -499,8 +489,8 @@ class Smoke(unittest.TestCase):
     def test_24_fallback_render_gets_its_own_strict_check(self):
         # issue #15: after a late --copy-unpatched fallback, verify() must not reuse the joined file's checks.
         # Two injected faults: the copied-frame comparison fails, and the fallback render is not a video.
-        src=self.gop_source('fallback.mp4',audio=False)  # no audio hash to catch the bad file instead
-        cfg=self.gop_config('fallback',src); out=self.base/'fallback-out.mp4'
+        src=self.gop_source('gop-fallback.mp4',audio=False)  # no audio hash to catch the bad file instead
+        cfg=self.gop_config('gop-fallback',src); out=self.base/'gop-fallback-out.mp4'
         code=("import sys; sys.path.insert(0, sys.argv[1]); import flow_patch as fp\n"
               "fp.frame_hashes = lambda path: [str(path)] * 48\n"
               "real = fp.process\n"

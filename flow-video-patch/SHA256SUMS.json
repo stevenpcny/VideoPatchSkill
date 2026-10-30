@@ -1,7 +1,7 @@
 {
   ".gitignore": "e4ad47057106bf047148732d68a78252b20253fcf8f811967bc76d6382eff64c",
   "AGENT_ENTRY.md": "428bf0d94757e5b354e25d72b2f7846cd54fe7b9fc282ab104e2dbf7f04906d2",
-  "CHANGELOG.md": "cce9413e8d70329a520ca7787737aa89f331b029cf035c6595225c2c4f28a2a1",
+  "CHANGELOG.md": "326a27de66fcbbd0a2448eeababb6b56f96831e26105892f24a9b798e2aaa575",
   "INTERNAL_USE.md": "0b8fe6c34237aa9e1a811293be1e26f7e7a55741aba7224af069d7224496ec6e",
   "README.md": "0563705b823181c1f32a088a59137f142905f06260bc002b0044322311ffd968",
   "SECURITY.md": "213565dee890dca8524009e08f3b747280bdcf389ee59f9d3eac02d2b26342cd",
@@ -25,7 +25,7 @@
   "references/install.md": "5f062e0deabc36594a665dd2387005361f569d35d81c7604089ecaa4943deeea",
   "references/native-kernels.md": "59d2a6b77632e1c9be472bc4499f000fe82deb0edff5d785abd1f007996c458c",
   "references/overlap-and-local-donors.md": "fe7ecec2c1ae746b7ce59d6d7d275d64fe22a9209e629db8dc23c16177759b11",
-  "references/parameters.md": "8593532457b4ed4838c7b02127abf5b5c0d3ed27c1e58af75359a65733917169",
+  "references/parameters.md": "c69d42bb903b6b6b7a6213a010645373c11b3d58304793d374a14e7c41ab5c45",
   "references/patch-lessons.md": "7bea0d5164362c8c0ae1f0c6bf58af3ead9d34bbda0fad133b9b94fc2e323475",
   "references/prompts.md": "341bef8484522493f687e5369e22b908c0ea1af63b9615a1f8edb592e9323b2e",
   "references/remote-worker.md": "7cde74f3c5eb369ef5dd5c347c54673ceaa19679f44283330ec957f2c462c83b",
@@ -38,7 +38,7 @@
   "references/workflow.md": "4dc1cce2e14846da230a1e3df8a3d032da616391b792c437ba55c9c37706e1c4",
   "requirements.txt": "726d9d8f1ded104a319b166e716c3ac1a876565f370b0ac4c28c225120f50810",
   "scripts/fit_patch.py": "306a11ecf6b38a44db5ab38fe0650187c4efea6cb75ddd0afb97920383738f63",
-  "scripts/flow_patch.py": "c22da18a9e90ef267e38e8fb79c3dbfa75e986c092a13577a5032e73b536d520",
+  "scripts/flow_patch.py": "2871872ad21d89f5ac8e16609aaf49e5ba2b7c902408707d6b921cbb1ac3e834",
   "scripts/qc_tools.py": "b4930021e3aca20d88984554b0649f5fc6a23ddfd35f548314b0a4e411acf491",
   "scripts/remote_run.py": "6ba5c0abea8817772279d274f3ebdb5e928b53ff5bf1fd6eaab408fdc8c1937c",
   "tests/color_pipeline_test.py": "404a5803209e2eaec8cc783347955dd716881a14c98ea05639e9d88709f8abaf",
@@ -47,5 +47,5 @@
   "tests/qc_tools_test.py": "a454ea7ba416c123b91b783a8f58f064db01b1b0208fd92a3ce25f2e0e21512a",
   "tests/remote_run_test.py": "7f454d6150ed18094343428fe1bc4b606e2ec79d8ba00bde31d547ed7643c586",
   "tests/security_test.py": "1fc35ab14d94c5fea97af070aae896f112809f3fb7e01d04e2f45ef5d6f99f41",
-  "tests/smoke_test.py": "a315edf66a344f89023becd3ca17ef034f8623ad1c4c220c904e9812e2bd2d70"
+  "tests/smoke_test.py": "c3031766caae7149154bee6072d9e3e8d9f09238dd15cca246f0adb4b011de36"
 }

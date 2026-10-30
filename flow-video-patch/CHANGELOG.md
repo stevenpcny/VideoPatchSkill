@@ -4,7 +4,7 @@
 
 ## v2.9
 
-- 新增 `flow_patch.py regrid --source X.mkv --output X.mp4`（issue #13）：普通 `-c copy` 把 MKV 转为 MP4 时保留毫秒取整的时间戳与包时长（如 23.976 fps 得到平均帧率 240000/10009），恒定帧率检查拒收。`regrid` 码流复制并把每个视频包时间戳移到最近的 n/fps（实测不到 1 ms），之后严格探测、逐帧解码哈希与音轨载荷均须与源片相同，报告记录最大移动量与命令；帧离网格超过四分之一帧即拒绝，不做静默重定时。CFR 检查不放宽。规整后的文件可用 `--copy-unpatched`。
+- 新增 `flow_patch.py regrid --source X.mkv --output X.mp4`（issue #13）：普通 `-c copy` 把 MKV 转为 MP4 时保留毫秒取整的时间戳与包时长（如 23.976 fps 得到平均帧率 240000/10009），恒定帧率检查拒收。`regrid` 码流复制并把每个视频包时间戳移到最近的 n/fps（实测不到 1 ms），之后严格探测、逐帧解码哈希与音轨载荷均须与源片相同，报告记录最大移动量与命令；帧离网格超过四分之一帧即拒绝，不做静默重定时。FFmpeg 新旧版本的 `setts` 语义不同，脚本依次尝试两种写法、只保留通过校验的一种（6.1、7.0、9.x 已测）。CFR 检查不放宽。规整后的文件可用 `--copy-unpatched`。
 - `tools/release.py` 在所有系统都写 LF（issue #12）：此前 Windows 重建时 `TOOL_POLICY.json`、`SHA256SUMS.json` 与 `.sha256` 变为 CRLF，ZIP 哈希不同且工作区出现改动。
 - `--copy-unpatched` 复制 0 帧（每个 GOP 都含补丁帧）时给出 NOTICE，说明未省时间（issue #11 D）。
 - 修正 v2.8 合并解码后的两处校验漏检（issue #11 流程精简审计）：
