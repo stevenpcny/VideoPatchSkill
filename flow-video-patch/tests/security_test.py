@@ -102,6 +102,18 @@ class Security(unittest.TestCase):
             with self.assertRaises(subprocess.TimeoutExpired):
                 fp.run([sys.executable, '-c', 'import time; time.sleep(5)'])
 
+    def test_encode_threads_bounded(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('FLOW_ENCODE_THREADS', None)
+            self.assertEqual(fp.encode_threads(), '4')
+        for good in ('0', '32'):
+            with patch.dict(os.environ, {'FLOW_ENCODE_THREADS': good}):
+                self.assertEqual(fp.encode_threads(), good)
+        for bad in ('-1', '65', '4 -y', 'auto', ''):
+            with patch.dict(os.environ, {'FLOW_ENCODE_THREADS': bad}):
+                with self.assertRaises(ValueError):
+                    fp.encode_threads()
+
     def test_fit_rejects_negative_index_and_nonfinite_parameters(self):
         script = Path(fp.__file__).with_name('fit_patch.py')
         for args in (['--patch', '-1'], ['--max-shift', 'inf'], ['--min-correlation', 'nan']):

@@ -5,15 +5,18 @@ All frame intervals are zero-based [start,end). All rectangles are x,y,w,h.
 Paths in JSON are relative to that JSON. See references/parameters.md.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import contextlib
 from fractions import Fraction
 import hashlib
 import json
 import os
 from pathlib import Path
+import queue
 import shutil
 import subprocess
 import tempfile
+import threading
 
 import cv2
 import numpy as np
@@ -125,7 +128,27 @@ def stream_color(path):
     return color_info(s)
 
 
-def yuv_to_bgr(y, u, v, color):
+def process_threads():
+    # Row bands are converted in parallel; NumPy releases the GIL, results are identical.
+    value = os.environ.get('FLOW_PROCESS_THREADS', '0')
+    require(value.isdigit() and int(value) <= 64, 'FLOW_PROCESS_THREADS must be 0 (auto) to 64')
+    return int(value) or min(os.cpu_count() or 1, 32)
+
+
+_POOL = None
+
+
+def in_bands(height, work):
+    """Run work(a, b) over even-aligned row bands covering [0, height)."""
+    global _POOL
+    if _POOL is None:
+        _POOL = ThreadPoolExecutor(process_threads())
+    bands = 2*process_threads()
+    step = max(2, (-(-height // bands) + 1) & ~1)
+    list(_POOL.map(lambda a: work(a, min(a+step, height)), range(0, height, step)))
+
+
+def _yuv_to_bgr(y, u, v, color):
     kr, kb = KR_KB[color['matrix']]
     y, u, v = (c.astype(np.float32) for c in (y, u, v))
     if color['range'] == 'tv':
@@ -138,7 +161,15 @@ def yuv_to_bgr(y, u, v, color):
     return np.clip(np.rint(np.stack([b, g, r], -1)), 0, 255).astype(np.uint8)
 
 
-def bgr_to_yuv420(bgr, color):
+def yuv_to_bgr(y, u, v, color):
+    out = np.empty(y.shape+(3,), np.uint8)
+    def work(a, b):
+        out[a:b] = _yuv_to_bgr(y[a:b], u[a:b], v[a:b], color)
+    in_bands(y.shape[0], work)
+    return out
+
+
+def _bgr_to_yuv420(bgr, color):
     kr, kb = KR_KB[color['matrix']]
     f = bgr.astype(np.float32)
     b, g, r = f[..., 0], f[..., 1], f[..., 2]
@@ -149,7 +180,52 @@ def bgr_to_yuv420(bgr, color):
     # 2x2 chroma average, centred like the encoder's default siting.
     u = (u[0::2, 0::2]+u[1::2, 0::2]+u[0::2, 1::2]+u[1::2, 1::2])/4+128
     v = (v[0::2, 0::2]+v[1::2, 0::2]+v[0::2, 1::2]+v[1::2, 1::2])/4+128
-    return b''.join(np.clip(np.rint(c), 0, 255).astype(np.uint8).tobytes() for c in (y, u, v))
+    return (np.clip(np.rint(c), 0, 255).astype(np.uint8) for c in (y, u, v))
+
+
+PREFETCH = 3
+
+
+class FrameWriter:
+    """Writes encoder input in a thread so encoding overlaps the next frame's work."""
+    def __init__(self, pipe):
+        self.pipe, self.error = pipe, None
+        self.items = queue.Queue(PREFETCH)
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        while (item := self.items.get()) is not None:
+            if self.error is None:
+                try:
+                    self.pipe.write(item)
+                except (OSError, ValueError) as e:
+                    self.error = e
+
+    def write(self, buf):
+        if self.error is not None:
+            raise self.error
+        self.items.put(buf)
+
+    def finish(self):
+        self.items.put(None)
+        self.thread.join()
+        return self.error
+
+
+def planes420(buf, w, h):
+    planes = np.frombuffer(buf, np.uint8)
+    return (buf, planes[:h*w].reshape(h, w), planes[h*w:h*w*5//4].reshape(h//2, w//2),
+            planes[h*w*5//4:].reshape(h//2, w//2))
+
+
+def bgr_to_yuv420(bgr, color):
+    h, w = bgr.shape[:2]
+    buf, Y, U, V = planes420(bytearray(h*w*3//2), w, h)
+    def work(a, b):
+        Y[a:b], U[a//2:b//2], V[a//2:b//2] = _bgr_to_yuv420(bgr[a:b], color)
+    in_bands(h, work)
+    return buf
 
 
 def probe(path):
@@ -239,28 +315,90 @@ class Reader:
                                   stdout=subprocess.PIPE, stderr=self.log)
         self.index = -1
         self.last = None
+        # Decode ahead in a thread; each frame gets its own buffer, so order and bytes are unchanged.
+        self.frames = queue.Queue(PREFETCH)
+        self.stopping = threading.Event()
+        self.thread = threading.Thread(target=self._read_ahead, daemon=True)
+        self.thread.start()
 
-    def get(self, index):
+    def _read_ahead(self):
+        try:
+            while not self.stopping.is_set():
+                blocks = bytearray(self.w*self.h*3)
+                view, done = memoryview(blocks), 0
+                while done < len(blocks):
+                    n = self.p.stdout.readinto(view[done:])
+                    if not n:
+                        break
+                    done += n
+                if done < len(blocks):
+                    break
+                self._put(blocks)
+        except (OSError, ValueError):
+            pass
+        self._put(None)
+
+    def _put(self, item):
+        while not self.stopping.is_set():
+            try:
+                self.frames.put(item, timeout=0.1)
+                return
+            except queue.Full:
+                pass
+
+    def advance(self, index):
+        """Read up to index; raw planes are kept, BGR conversion happens on demand."""
         require(index >= self.index, 'Non-monotone mapping is unsupported')
         while self.index < index:
-            count = self.w*self.h*3
-            blocks = bytearray()
-            while len(blocks) < count:
-                b = self.p.stdout.read(count-len(blocks))
-                if not b:
-                    raise ValueError(f'Decoder ended before frame {index}')
-                blocks.extend(b)
+            blocks = self.frames.get() if self.thread.is_alive() or not self.frames.empty() else None
+            if blocks is None:
+                self.thread.join()
+                raise ValueError(f'Decoder ended before frame {index}')
             if self.color['rgb_input']:
-                self.last = np.frombuffer(blocks, np.uint8).reshape(self.h, self.w, 3)
+                self.raw = np.frombuffer(blocks, np.uint8).reshape(self.h, self.w, 3)
             else:
-                y, u, v = np.frombuffer(blocks, np.uint8).reshape(3, self.h, self.w)
-                self.last = yuv_to_bgr(y, u, v, self.color)
+                self.raw = np.frombuffer(blocks, np.uint8).reshape(3, self.h, self.w)
+            self.last = None
             self.index += 1
+
+    def get(self, index):
+        self.advance(index)
+        if self.last is None:
+            self.last = (self.raw if self.color['rgb_input'] else
+                         yuv_to_bgr(*self.raw, self.color))
         return self.last
 
+    def region(self, index, rect):
+        """BGR of one rectangle; same values as the matching slice of get()."""
+        self.advance(index)
+        x, y, w, h = rect
+        if self.color['rgb_input']:
+            return self.raw[y:y+h, x:x+w].copy()
+        return yuv_to_bgr(*(c[y:y+h, x:x+w] for c in self.raw), self.color)
+
+    def passthrough420(self, index):
+        """Output buffer and Y/U/V views holding this frame without an RGB round trip."""
+        self.advance(index)
+        if self.color['rgb_input']:
+            return planes420(bgr_to_yuv420(self.raw, self.color), self.w, self.h)
+        buf, Y, U, V = planes420(bytearray(self.w*self.h*3//2), self.w, self.h)
+        y, u, v = self.raw
+        def work(a, b):
+            Y[a:b] = y[a:b]
+            for src, dst in ((u, U), (v, V)):
+                c = src[a:b].astype(np.uint16)
+                s = c[0::2, 0::2]+c[1::2, 0::2]+c[0::2, 1::2]+c[1::2, 1::2]
+                # Integer form of rint(s/4): ties (remainder 2) go to the even quotient.
+                q, r = s >> 2, s & 3
+                dst[a//2:b//2] = q+((r > 2) | ((r == 2) & (q & 1 == 1)))
+        in_bands(self.h, work)
+        return buf, Y, U, V
+
     def close(self):
-        self.p.stdout.close()
+        self.stopping.set()
         stop_process(self.p)
+        self.thread.join(timeout=10)
+        self.p.stdout.close()
         self.log.close()
 
 
@@ -269,13 +407,13 @@ def matte(spec, frame, size):
     x, y, w, h = rectangle(spec['region'], frame, size)
     feather = float(spec.get('feather', 16))
     require(0 <= feather < min(w, h)/2, 'Feather must be >=0 and < half region width/height')
-    yy, xx = np.mgrid[:size[1], :size[0]]
+    yy, xx = np.ogrid[:size[1], :size[0]]
     if spec.get('shape', 'rect') == 'ellipse':
         distance = (1-np.sqrt(((xx-(x+(w-1)/2))/(w/2))**2 +
                               ((yy-(y+(h-1)/2))/(h/2))**2))*min(w,h)/2
     else:
         require(spec.get('shape', 'rect') == 'rect', 'Unknown matte shape')
-        distance = np.minimum.reduce([xx-x, x+w-1-xx, yy-y, y+h-1-yy]).astype(float)
+        distance = np.minimum(np.minimum(xx-x, x+w-1-xx), np.minimum(yy-y, y+h-1-yy)).astype(float)
     m = (distance >= 0).astype(np.float32) if feather == 0 else np.clip(distance/feather, 0, 1)
     m = (m*m*(3-2*m)).astype(np.float32)
     for box in spec.get('protect', []):
@@ -417,6 +555,13 @@ def merge_plan(cfg, info):
     return plans
 
 
+def encode_threads():
+    # 0 lets libx264 pick from the core count; the default 4 keeps earlier outputs reproducible.
+    value = os.environ.get('FLOW_ENCODE_THREADS', '4')
+    require(value.isdigit() and int(value) <= 64, 'FLOW_ENCODE_THREADS must be 0 (auto) to 64')
+    return value
+
+
 def encoder(path, size, fps, source, color, audio_filter=None):
     require(size[0] % 2 == 0 and size[1] % 2 == 0, 'Output dimensions must be even for yuv420p')
     # Frames arrive as yuv420p already converted with the source matrix; tag via bitstream
@@ -427,7 +572,7 @@ def encoder(path, size, fps, source, color, audio_filter=None):
             f":video_full_range_flag={int(color['range'] == 'pc')}")
     cmd = [FFMPEG, '-v', 'error', '-n', '-f', 'rawvideo', '-pix_fmt', 'yuv420p',
            '-s', f'{size[0]}x{size[1]}', '-r', fps, '-protocol_whitelist', 'pipe', '-i', 'pipe:0', *file_input(source),
-           '-map', '0:v:0', '-map', '1:a:0?', '-c:v', 'libx264', '-threads', '4',
+           '-map', '0:v:0', '-map', '1:a:0?', '-c:v', 'libx264', '-threads', encode_threads(),
            '-crf', '17', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-bsf:v', tags]
     if audio_filter is None:
         cmd += ['-c:a', 'copy']
@@ -436,17 +581,17 @@ def encoder(path, size, fps, source, color, audio_filter=None):
     return cmd+['-movflags', '+faststart', str(path)]
 
 
-def process(cfg, info, mode, out):
+def process(cfg, info, mode, out, plan):
     with contextlib.ExitStack() as stack:
         source = Reader(cfg['source'], info['size'], info['color']); stack.callback(source.close)
         if mode == 'prepare':
-            plan = prepare_plan(cfg, info); p = cfg['prepare']; size = plan['size']
+            p = cfg['prepare']; size = plan['size']
             fps = Fraction(info['fps']); first, last = plan['first'], plan['last']
             af = (f'atrim=start={float(first/fps)}:end={float(last/fps)},asetpts=PTS-STARTPTS,'
                   f'apad,atrim=duration={float((last-first)/fps)}')
             cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], af)
         else:
-            plans = merge_plan(cfg, info); size = info['size']; first, last = 0, info['frames']
+            plans = plan; size = info['size']; first, last = 0, info['frames']
             readers = [Reader(p['generated'], q['info']['size'], q['info']['color'])
                        for p,q in zip(cfg['patches'],plans)]
             for reader in readers:
@@ -455,52 +600,83 @@ def process(cfg, info, mode, out):
             plan = {'size': size, 'frames': last, 'audio': info['audio']}
         log = stack.enter_context(tempfile.TemporaryFile())
         enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=log)
+        out_frames = FrameWriter(enc.stdin)
         try:
-            for i in range(first, last):
-                scene = source.get(i).copy()
-                if mode == 'prepare':
-                    x,y,w,h = rectangle(p['crop'], i, info['size'])
-                    scene = cv2.resize(scene[y:y+h,x:x+w], tuple(size), interpolation=cv2.INTER_LANCZOS4)
-                    if p['core'][0] <= i < p['core'][1]:
-                        for box in p['mask_regions']:
-                            bx,by,bw,bh = rectangle(box, i, size)
-                            scene[by:by+bh,bx:bx+bw] = p.get('color_rgb',[0,0,0])[::-1]
-                else:
+            try:
+                for i in range(first, last):
+                    if mode == 'prepare':
+                        x,y,w,h = rectangle(p['crop'], i, info['size'])
+                        scene = cv2.resize(source.region(i,(x,y,w,h)), tuple(size), interpolation=cv2.INTER_LANCZOS4)
+                        if p['core'][0] <= i < p['core'][1]:
+                            for box in p['mask_regions']:
+                                bx,by,bw,bh = rectangle(box, i, size)
+                                scene[by:by+bh,bx:bx+bw] = p.get('color_rgb',[0,0,0])[::-1]
+                        out_frames.write(bgr_to_yuv420(scene, info['color']))
+                        continue
+                    active = []
                     for p,q,reader in zip(cfg['patches'],plans,readers):
                         if not p['target'][0] <= i < p['target'][1]:
                             continue
                         j = q['indices'][i-p['target'][0]]
-                        if j is None:
-                            continue
-                        x,y,w,h = rectangle(p['crop'], i, size); ws = tuple(p['work_size'])
-                        roi = scene[y:y+h,x:x+w].copy()
-                        original = cv2.resize(roi, ws, interpolation=cv2.INTER_LANCZOS4)
-                        patch = cv2.resize(reader.get(j), ws, interpolation=cv2.INTER_LANCZOS4)
-                        affine = curve(p.get('source_to_generated_affine',[1,0,0,0,1,0]),i).reshape(2,3)
-                        patch = cv2.warpAffine(patch,affine,ws,
-                                              flags=cv2.INTER_LINEAR|cv2.WARP_INVERSE_MAP,
-                                              borderMode=cv2.BORDER_CONSTANT)
-                        patch = np.clip(patch.astype(float)*p.get('gain_bgr',[1,1,1])+
-                                        p.get('offset_bgr',[0,0,0]),0,255).round().astype(np.uint8)
-                        m = matte(p['matte'],i,ws); fade = p.get('fade_frames',0)
-                        if fade:
-                            k = i-p['target'][0]
-                            m *= min(1,k/fade,(len(q['indices'])-1-k)/fade)
-                        merged = blend(original,patch,m,p.get('blend','alpha'),p.get('levels',5))
-                        delta = cv2.resize(merged.astype(float)-original.astype(float),(w,h),
-                                           interpolation=cv2.INTER_LINEAR)
-                        # Enforce support again after scaling (including protected mouth).
-                        support = cv2.resize(m,(w,h),interpolation=cv2.INTER_NEAREST)>0
-                        delta[~support] = 0
-                        scene[y:y+h,x:x+w] = np.clip(roi.astype(float)+delta,0,255).round().astype(np.uint8)
-                enc.stdin.write(bgr_to_yuv420(scene, info['color']))
-            enc.stdin.close()
+                        if j is not None:
+                            active.append((p,q,reader,j,rectangle(p['crop'], i, size)))
+                    # Pixels outside every patch support go out as decoded, without an RGB round trip.
+                    frame, Y, U, V = source.passthrough420(i)
+                    if active:
+                        # Even-aligned union of the crops, so chroma blocks touching a patch are recomputed whole.
+                        x0 = min(r[0] for *_,r in active) & ~1; y0 = min(r[1] for *_,r in active) & ~1
+                        x1 = max(r[0]+r[2] for *_,r in active); y1 = max(r[1]+r[3] for *_,r in active)
+                        x1 += x1 & 1; y1 += y1 & 1
+                        scene = source.region(i,(x0,y0,x1-x0,y1-y0))
+                        changed = np.zeros(scene.shape[:2], bool)
+                        for p,q,reader,j,(x,y,w,h) in active:
+                            x -= x0; y -= y0; ws = tuple(p['work_size'])
+                            roi = scene[y:y+h,x:x+w].copy()
+                            original = cv2.resize(roi, ws, interpolation=cv2.INTER_LANCZOS4)
+                            patch = cv2.resize(reader.get(j), ws, interpolation=cv2.INTER_LANCZOS4)
+                            affine = curve(p.get('source_to_generated_affine',[1,0,0,0,1,0]),i).reshape(2,3)
+                            patch = cv2.warpAffine(patch,affine,ws,
+                                                  flags=cv2.INTER_LINEAR|cv2.WARP_INVERSE_MAP,
+                                                  borderMode=cv2.BORDER_CONSTANT)
+                            patch = np.clip(patch.astype(float)*p.get('gain_bgr',[1,1,1])+
+                                            p.get('offset_bgr',[0,0,0]),0,255).round().astype(np.uint8)
+                            m = matte(p['matte'],i,ws); fade = p.get('fade_frames',0)
+                            if fade:
+                                k = i-p['target'][0]
+                                m *= min(1,k/fade,(len(q['indices'])-1-k)/fade)
+                            merged = blend(original,patch,m,p.get('blend','alpha'),p.get('levels',5))
+                            delta = cv2.resize(merged.astype(float)-original.astype(float),(w,h),
+                                               interpolation=cv2.INTER_LINEAR)
+                            # Enforce support again after scaling (including protected mouth).
+                            support = cv2.resize(m,(w,h),interpolation=cv2.INTER_NEAREST)>0
+                            delta[~support] = 0
+                            scene[y:y+h,x:x+w] = np.clip(roi.astype(float)+delta,0,255).round().astype(np.uint8)
+                            changed[y:y+h,x:x+w] |= support
+                        _, Yr, Ur, Vr = planes420(bgr_to_yuv420(scene, info['color']), x1-x0, y1-y0)
+                        Y[y0:y1,x0:x1][changed] = Yr[changed]
+                        block = changed.reshape((y1-y0)//2, 2, (x1-x0)//2, 2).any((1, 3))
+                        U[y0//2:y1//2,x0//2:x1//2][block] = Ur[block]
+                        V[y0//2:y1//2,x0//2:x1//2][block] = Vr[block]
+                    out_frames.write(frame)
+            except OSError as e:
+                # Encoder stopped reading; its own log below says why.
+                if e is not out_frames.error:
+                    raise
+            error = out_frames.finish()
+            with contextlib.suppress(OSError):
+                enc.stdin.close()
             code = enc.wait()
             log.seek(0)
             require(code == 0, 'Encoder failed: '+log.read().decode(errors='replace'))
+            if error is not None:
+                raise error
         finally:
+            if out_frames.thread.is_alive():
+                stop_process(enc)
+                out_frames.finish()
             if not enc.stdin.closed:
-                enc.stdin.close()
+                with contextlib.suppress(OSError):
+                    enc.stdin.close()
             if enc.poll() is None:
                 stop_process(enc)
         return plan, cmd
@@ -536,7 +712,7 @@ def main():
                           'python':os.sys.version,'opencv':cv2.__version__, 'numpy':np.__version__,
                           'ffmpeg':run([FFMPEG,'-version']).decode().splitlines()[0],
                           'ffprobe':run([FFPROBE,'-version']).decode().splitlines()[0],
-                          'libx264':True},ensure_ascii=False,indent=2)); return
+                          'libx264':True,'encode_threads':encode_threads()},ensure_ascii=False,indent=2)); return
     if args.mode == 'inspect':
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
@@ -552,7 +728,7 @@ def main():
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.flow-patch-',dir=output.parent) as tmp:
         temp = Path(tmp)/output.name
-        plan,cmd = process(cfg,info,args.mode,temp)
+        plan,cmd = process(cfg,info,args.mode,temp,plan)
         expected = dict(plan,fps=info['fps'])
         result = verify(cfg['source'],temp,expected,args.mode=='merge')
         result['output'].update(plan)
