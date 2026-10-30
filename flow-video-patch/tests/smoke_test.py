@@ -326,6 +326,22 @@ class Smoke(unittest.TestCase):
         self.assertTrue(any('4:2:2' in n for n in notices) and any('2 audio tracks' in n for n in notices))
         self.assertIn('NOTICE:',p.stderr)
 
+    @unittest.skipUnless(fp.native_library().is_file(), 'optional native kernels not built (references/native-kernels.md)')
+    def test_17_native_kernels_match_numpy(self):
+        # Same frames in, same libx264 settings: the encoded files must be byte-identical.
+        p=self.patch(matte=dict(region=[4,4,40,56],feather=4),blend='multiband',levels=2,work_size=[48,64])
+        q=self.patch(crop=[96,0,96,128])
+        cfg=self.config('kernels',patches=[p,q])
+        outs={}
+        for mode in ('numpy','native'):
+            out=self.base/f'kernels-{mode}.mp4'
+            r=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),
+                              '--output',str(out)],env=dict(os.environ,FLOW_KERNELS=mode),
+                             capture_output=True,text=True,encoding='utf-8')
+            self.assertEqual(r.returncode,0,r.stderr)
+            outs[mode]=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))['output_sha256']
+        self.assertEqual(outs['numpy'],outs['native'])
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

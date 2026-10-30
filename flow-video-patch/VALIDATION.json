@@ -1,63 +1,114 @@
 {
-  "package_version": "2.5",
+  "package_version": "2.6",
   "update_scope": [
-    "flow_patch.py: single-pass probe with concurrent source/return probing; parallel output verification; static matte cache and first-frame plan checks; banded element-wise blend and paste-back; identity colour skip; reader stops its decoder at once on close (no 5 s terminate wait)",
-    "flow_patch.py: reader start frame (seek halfway between frames on an n/fps grid, else select by frame number); merge --frames START:END and --preview check-only exports marked not deliverable; probe cache for check-only runs",
-    "flow_patch.py: opt-in FLOW_SEGMENTS segmented merge; FLOW_CRF and FLOW_X264_PRESET; fade_in_frames/fade_out_frames; NOTICE for 4:2:2/4:4:4 sources and dropped audio/subtitle/data streams; coarse time-base CFR tolerance; explicit decode range (full-range fix on FFmpeg 6.1); UTF-8 console",
-    "fit_patch.py: --motion translation|euclidean|affine with --max-linear-change; crop-only conversion",
-    "qc_tools.py: seam command (transition-band weighted high/low-frequency mismatch, same layers as merge)",
-    "tests: smoke 16, security 13, qc_tools 5; explicit UTF-8 text IO; Windows-only skip of the open-file rename race test",
-    "CI (.github/workflows/tests.yml) on Linux/macOS/Windows; .gitattributes byte-exact checkouts; CHANGELOG.md; README slimmed"
+    "native/: optional Rust kernels (standard library only) via ctypes; bit-identical self-check against NumPy before use; FLOW_KERNELS",
+    "flow_patch.py: FLOW_VIDEO_ENCODER (h264_nvenc/h264_qsv/h264_amf) with FLOW_HW_DELIVERABLE guard; doctor shows kernels and hardware encoders",
+    "scripts/remote_run.py: ssh-only check/push/run/pull for the single worker in the user-local profile",
+    "TOOL_POLICY.json optional_components_owner_approved; tests smoke 17, security 15, remote_run 2; CI kernels matrix"
   ],
-  "processing_scripts": "flow_patch.py, fit_patch.py and qc_tools.py changed; full merges without new options are byte-identical to v2.4 on the synthetic 4K fixtures",
-  "tool_policy_scope": "Package version only; no new tool/runtime/codec/service authorization",
+  "processing_scripts": "flow_patch.py changed (kernels, encoder choice); remote_run.py new; default outputs byte-identical to v2.5/v2.4",
+  "tool_policy_scope": "Owner-approved optional components: Rust toolchain (build only), FFmpeg hardware H.264 encoders, OpenSSH client; all off or self-checked by default",
   "upstream": {
-    "main_commit": "59f8536",
-    "status": "pending PR stevenpcny/VideoPatchSkill#5"
+    "main_commit": "36820f7",
+    "status": "pending PR"
   },
   "current_static_verification": {
     "date": "2026-10-30",
-    "privacy_scan_new_text": "pass (no machine paths, accounts, addresses or user names)",
+    "privacy_scan_new_text": "pass",
     "scripts_tests_changed": true,
     "requirements_unchanged": true,
-    "allowlist_changes": "package_version only",
-    "zip": "built v2.5"
+    "allowlist_changes": "optional components recorded; default chain unchanged",
+    "zip": "built v2.6 (native source only, no binaries)"
   },
   "current_behavioral_verification": {
     "date": "2026-10-30",
     "scope": "synthetic fixtures only",
     "linux_local": {
-      "platform": "Linux, 4 cores, Python 3.13, NumPy 2.5, OpenCV 5.0 (headless), FFmpeg 6.1.1",
-      "smoke_test": "16/16",
-      "security_test": "13/13",
-      "qc_tools_test": "5/5",
-      "color_pipeline_test": "9/9",
-      "ffmpeg_regression": "6/6",
-      "note": "color_pipeline test_05 failed before the explicit decode range fix (FFmpeg 6.1 squeezed yuvj input)"
+      "platform": "Linux, 4 cores, Python 3.13, NumPy 2.5, OpenCV 5.0, FFmpeg 6.1.1, rustc 1.97",
+      "per_kernel_mode": {
+        "smoke_test": "17/17",
+        "security_test": "15/15",
+        "qc_tools_test": "5/5",
+        "color_pipeline_test": "9/9",
+        "remote_run_test": "2/2",
+        "ffmpeg_regression": "6/6"
+      }
     },
-    "github_actions": {
-      "platforms": [
-        "ubuntu-latest",
-        "macos-latest",
-        "windows-latest (FFmpeg 9.0.2)"
-      ],
-      "result": "all suites pass on each push of PR #5; Windows skips the inapplicable rename race test; final head result in the PR checks"
-    },
-    "equivalence": "full merges byte-identical to v2.4 output (same-size, scaled and unused-tail fixtures); seeking reader byte-identical to sequential decode on 23.976 B-frame, 25p long-GOP, 30p and 60p all-intra fixtures; segmented merge frame-aligned with single-process output, audio payload identical",
+    "equivalence": "native and NumPy kernels give byte-identical merges, identical to v2.4 on the 4K same-size and scaled fixtures",
     "speed_synthetic": {
-      "4k_same_size_merge": "49.5 s -> 25.4 s",
-      "4k_scaled_merge": "38.6 s -> 25.2 s",
-      "4k_unused_tail_frames": "50.8 s -> 27.7 s",
-      "1080p_2min_check_30_frames": "125.9 s (v2.4 full merge) -> 10.2 s first, 3.1 s cached",
-      "segments_on_4_cores": "no gain (1: 26.9 s, 2: 26.3 s, 4: 30.4 s)"
-    }
+      "4k_merge_python_cpu": "27.9 s -> 17.8 s (native)",
+      "4k_merge_wall_ultrafast": "18.4 s -> 13.7 s (native)"
+    },
+    "not_run": [
+      "hardware encoders (no GPU in the test environment)",
+      "remote_run against a real worker (stand-in ssh only)"
+    ]
   },
   "limits": [
-    "No real Flow generation, real-footage timing or visual acceptance in release tests",
-    "FLOW_SEGMENTS multi-core benefit not yet measured on the LAN worker",
-    "Synthetic tests do not prove identity, lip sync or seamless results"
+    "No real Flow generation, real-footage timing or visual acceptance",
+    "Hardware encoder quality must be compared on the worker before FLOW_HW_DELIVERABLE=1"
   ],
   "prior_validation": {
+    "v2.5": {
+      "package_version": "2.5",
+      "update_scope": [
+        "flow_patch.py: single-pass probe with concurrent source/return probing; parallel output verification; static matte cache and first-frame plan checks; banded element-wise blend and paste-back; identity colour skip; reader stops its decoder at once on close (no 5 s terminate wait)",
+        "flow_patch.py: reader start frame (seek halfway between frames on an n/fps grid, else select by frame number); merge --frames START:END and --preview check-only exports marked not deliverable; probe cache for check-only runs",
+        "flow_patch.py: opt-in FLOW_SEGMENTS segmented merge; FLOW_CRF and FLOW_X264_PRESET; fade_in_frames/fade_out_frames; NOTICE for 4:2:2/4:4:4 sources and dropped audio/subtitle/data streams; coarse time-base CFR tolerance; explicit decode range (full-range fix on FFmpeg 6.1); UTF-8 console",
+        "fit_patch.py: --motion translation|euclidean|affine with --max-linear-change; crop-only conversion",
+        "qc_tools.py: seam command (transition-band weighted high/low-frequency mismatch, same layers as merge)",
+        "tests: smoke 16, security 13, qc_tools 5; explicit UTF-8 text IO; Windows-only skip of the open-file rename race test",
+        "CI (.github/workflows/tests.yml) on Linux/macOS/Windows; .gitattributes byte-exact checkouts; CHANGELOG.md; README slimmed"
+      ],
+      "processing_scripts": "flow_patch.py, fit_patch.py and qc_tools.py changed; full merges without new options are byte-identical to v2.4 on the synthetic 4K fixtures",
+      "tool_policy_scope": "Package version only; no new tool/runtime/codec/service authorization",
+      "upstream": {
+        "main_commit": "36820f7",
+        "status": "released on main (merged PR stevenpcny/VideoPatchSkill#5)"
+      },
+      "current_static_verification": {
+        "date": "2026-10-30",
+        "privacy_scan_new_text": "pass (no machine paths, accounts, addresses or user names)",
+        "scripts_tests_changed": true,
+        "requirements_unchanged": true,
+        "allowlist_changes": "package_version only",
+        "zip": "built v2.5"
+      },
+      "current_behavioral_verification": {
+        "date": "2026-10-30",
+        "scope": "synthetic fixtures only",
+        "linux_local": {
+          "platform": "Linux, 4 cores, Python 3.13, NumPy 2.5, OpenCV 5.0 (headless), FFmpeg 6.1.1",
+          "smoke_test": "16/16",
+          "security_test": "13/13",
+          "qc_tools_test": "5/5",
+          "color_pipeline_test": "9/9",
+          "ffmpeg_regression": "6/6",
+          "note": "color_pipeline test_05 failed before the explicit decode range fix (FFmpeg 6.1 squeezed yuvj input)"
+        },
+        "github_actions": {
+          "platforms": [
+            "ubuntu-latest",
+            "macos-latest",
+            "windows-latest (FFmpeg 9.0.2)"
+          ],
+          "result": "all suites pass on each push of PR #5; Windows skips the inapplicable rename race test; final head result in the PR checks"
+        },
+        "equivalence": "full merges byte-identical to v2.4 output (same-size, scaled and unused-tail fixtures); seeking reader byte-identical to sequential decode on 23.976 B-frame, 25p long-GOP, 30p and 60p all-intra fixtures; segmented merge frame-aligned with single-process output, audio payload identical",
+        "speed_synthetic": {
+          "4k_same_size_merge": "49.5 s -> 25.4 s",
+          "4k_scaled_merge": "38.6 s -> 25.2 s",
+          "4k_unused_tail_frames": "50.8 s -> 27.7 s",
+          "1080p_2min_check_30_frames": "125.9 s (v2.4 full merge) -> 10.2 s first, 3.1 s cached",
+          "segments_on_4_cores": "no gain (1: 26.9 s, 2: 26.3 s, 4: 30.4 s)"
+        }
+      },
+      "limits": [
+        "No real Flow generation, real-footage timing or visual acceptance in release tests",
+        "FLOW_SEGMENTS multi-core benefit not yet measured on the LAN worker",
+        "Synthetic tests do not prove identity, lip sync or seamless results"
+      ]
+    },
     "v2.4": {
       "package_version": "2.4",
       "update_scope": [

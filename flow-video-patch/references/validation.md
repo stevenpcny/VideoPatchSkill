@@ -28,6 +28,8 @@ v2.0 合并仓库线（v1.4 身体露肤、v1.5 局部补丁经验、v1.5.1 色�
 
 v2.1 合并另一工作分支的多人交界／局部供体、表演保护、可编辑工程交付指南及验收字段；全部处理脚本、测试和依赖保持 v2.0 字节一致。本次实际验证见根目录 VALIDATION.json；未执行真实生成、实片视觉验收或 Resolve 重开／迁移测试，不把历史环境测试升级为通用兼容保证。
 
+v2.6 新增可选编译内核、硬件编码与远程执行脚本（见[版本记录](../CHANGELOG.md)）。Linux（FFmpeg 6.1.1）以 `FLOW_KERNELS=native` 与 `numpy` 各跑一遍：smoke 17、security 15、qc_tools 5、color_pipeline 9、remote_run 2、ffmpeg 回归 6 全过；两种内核的合成输出逐字节相同，并与 v2.4 输出相同。remote_run 用本地替身 ssh 测试，未连接真实工作机；硬件编码因无显卡未实测。
+
 v2.5 修改处理脚本、测试与 CI（见[版本记录](../CHANGELOG.md)）。Linux（Python 3.13、NumPy 2.5、OpenCV 5.0、FFmpeg 6.1.1，4 核）五套合成测试全过（smoke 16、security 13、qc_tools 5、color_pipeline 9、ffmpeg 回归 6），GitHub Actions 在 Ubuntu、macOS、Windows 上复跑同样五套（Windows 不设 PYTHONUTF8，跳过 1 项不适用的改名竞态测试）。改前在同机 color_pipeline test_05（全范围保留）失败，原因是 FFmpeg 6.1 解码 yuvj 源时压缩范围，现已修正。合成 4K 合并在同尺寸与缩放两种贴回下与 v2.4 输出哈希相同。分段合成（smoke test_10）验证 2 段输出帧数、音轨载荷与单进程相同，每帧与单进程同号帧最接近。读取器寻址在 23.976 带 B 帧、25p 长 GOP、30p、60p 全 I 帧样例的多个起点与顺序解码逐字节相同。未做实片计时与视觉验收；分段合成的多核收益未实测。
 
 v2.4 修改处理脚本与测试（提速与局域网工作机，见 README）。合成素材复验：macOS 五套全过（smoke 8、security 11、qc_tools 4、color_pipeline 9、ffmpeg 回归 6）；Windows 11（Python 3.13、NumPy 2.5、OpenCV 5.0、FFmpeg 9.0.2，设置 PYTHONUTF8=1）除 security 的文件占用替换测试外全过，该项为 Windows 禁止改名已打开文件，所模拟的竞态在该平台不会发生。多线程色彩转换与预读／写出线程在 4K 合成测试上与前一步输出逐字节相同；仅转换补丁区域只改变支持区外像素，其亮度在编码前等于原片解码值。未做实片计时与视觉验收；QSV 未评估。

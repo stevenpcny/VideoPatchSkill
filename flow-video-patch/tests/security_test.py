@@ -128,6 +128,49 @@ class Security(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     fp.x264_settings()
 
+    def test_kernel_mode_bounded(self):
+        saved = list(fp._KERNELS)
+        try:
+            for bad in ('rust', 'native -y', ''):
+                fp._KERNELS.clear()
+                with patch.dict(os.environ, {'FLOW_KERNELS': bad}):
+                    with self.assertRaises(ValueError):
+                        fp.kernels()
+            fp._KERNELS.clear()
+            with patch.dict(os.environ, {'FLOW_KERNELS': 'numpy'}):
+                self.assertIsNone(fp.kernels())
+            fp._KERNELS.clear()
+            with patch.object(fp, 'NATIVE_DIR', self.base/'absent'):
+                with patch.dict(os.environ, {'FLOW_KERNELS': 'native'}):
+                    with self.assertRaises(ValueError):
+                        fp.kernels()  # required but not built: refuse, never fall back silently
+        finally:
+            fp._KERNELS[:] = saved
+
+    def test_video_encoder_choice_and_deliverable_guard(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('FLOW_VIDEO_ENCODER', None)
+            self.assertEqual(fp.codec_args()[:2], ['-c:v', 'libx264'])
+        for name, fmt in (('h264_nvenc', 'yuv420p'), ('h264_qsv', 'nv12'), ('h264_amf', 'yuv420p')):
+            with patch.dict(os.environ, {'FLOW_VIDEO_ENCODER': name, 'FLOW_CRF': '20'}):
+                args = fp.codec_args()
+                self.assertEqual((args[1], args[-1]), (name, fmt))
+                self.assertIn('20', args)
+        for bad in ('libx265', 'h264_nvenc -y', ''):
+            with patch.dict(os.environ, {'FLOW_VIDEO_ENCODER': bad}):
+                with self.assertRaises(ValueError):
+                    fp.video_encoder()
+        # Deliverables refuse a hardware encoder until its quality was compared (FLOW_HW_DELIVERABLE=1).
+        script = Path(fp.__file__)
+        env = dict(os.environ, FLOW_VIDEO_ENCODER='h264_nvenc')
+        env.pop('FLOW_HW_DELIVERABLE', None)
+        result = subprocess.run([sys.executable, str(script), 'merge', '--config', str(self.base/'absent.json'),
+                                 '--output', str(self.base/'hw.mp4')], env=env,
+                                capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('FLOW_HW_DELIVERABLE=1', result.stderr)
+        self.assertFalse((self.base/'hw.mp4').exists())
+
     def test_segments_bounded(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop('FLOW_SEGMENTS', None)

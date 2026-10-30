@@ -11,6 +11,9 @@
 | OpenCV核心 | 4.5.0及以上核心Apache-2.0；本包兼容范围从4.10起。OpenCV及相关贡献者 | 缩放、仿射、ECC配准及图像金字塔；允许商业使用 |
 | opencv-python或headless包装代码 | MIT；wheel另有第三方许可。包装项目作者与贡献者，具体版权名单见安装包 | 提供cv2；只选一种发行包安装，不将整个wheel统称为MIT |
 | FFmpeg与ffprobe | 基础许可为LGPL-2.1-or-later，可选GPL组件和构建选项会改变实际构建许可。FFmpeg开发者及贡献者 | 解码、编码、封装与验证；GPL/LGPL均允许商业运行，须核对实际构建 |
+| Rust 工具链与标准库（可选） | MIT OR Apache-2.0；Rust Project Developers | 仅在使用者构建 `native/` 时使用；编译出的库含 Rust 标准库代码，只在本机使用、不分发 |
+| OpenSSH 客户端（可选） | BSD 风格许可；OpenSSH 项目（Windows 为微软移植版） | 仅 `remote_run.py` 连接本地档案指定的工作机 |
+| GPU 编码驱动与 FFmpeg 硬件编码器（可选） | FFmpeg 侧接口头文件为 MIT（nv-codec-headers、libvpl、AMF）；驱动运行时为显卡厂商专有许可 | `FLOW_VIDEO_ENCODER` 选用时；驱动许可与消费级显卡的会话数限制在该机核对 |
 | x264／libx264 | 开源GPL-2.0-or-later；另有商业授权路线。x264开发者及相关权利人 | 通过FFmpeg完成H.264编码；仅内部商业运行不自动要求另购x264商业许可 |
 
 完整版权名单、许可证、免责声明和第三方通知以所装版本为准，不以本表替代。

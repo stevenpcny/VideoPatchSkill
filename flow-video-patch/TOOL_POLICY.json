@@ -1,20 +1,22 @@
 {
   "schema_version": 1,
   "policy_id": "flow-local-allowlist-v1",
-  "package_version": "2.5",
+  "package_version": "2.6",
   "enforcement": "agent_instructions_not_an_os_sandbox",
   "default_decision": "stop_for_any_unlisted_media_tool_dependency_model_service_or_plugin",
   "allowed_scripts": [
     "scripts/flow_patch.py",
     "scripts/fit_patch.py",
-    "scripts/qc_tools.py"
+    "scripts/qc_tools.py",
+    "scripts/remote_run.py"
   ],
   "allowed_test_scripts": [
     "tests/smoke_test.py",
     "tests/security_test.py",
     "tests/ffmpeg_regression.sh",
     "tests/qc_tools_test.py",
-    "tests/color_pipeline_test.py"
+    "tests/color_pipeline_test.py",
+    "tests/remote_run_test.py"
   ],
   "allowed_runtime_components": [
     {
@@ -77,5 +79,38 @@
     "x264 advisory applicability and build patch status remain unconfirmed"
   ],
   "license_reference": "THIRD_PARTY_NOTICES.md",
-  "procedure_reference": "references/tool-policy.md"
+  "procedure_reference": "references/tool-policy.md",
+  "optional_components_owner_approved": {
+    "approved_by": "package owner, 2026-10-30, for the scopes below; each machine still verifies its actual build",
+    "components": [
+      {
+        "id": "flow_kernels_native",
+        "source": "native/ (Rust, standard library only, no crates)",
+        "build_tool": "Rust toolchain (rustc/cargo), build time only; MIT OR Apache-2.0",
+        "scope": "Per-pixel colour conversion, chroma average, blend and paste-back kernels loaded by flow_patch.py via ctypes",
+        "default": "FLOW_KERNELS=auto uses the library only if built in native/target/release and it passes the bit-identical self-check against NumPy; numpy never uses it; native requires it",
+        "conditions": "Built locally from the bundled source; never download or ship prebuilt binaries; results must stay bit-identical to the NumPy paths"
+      },
+      {
+        "id": "ffmpeg_hardware_h264",
+        "encoders": [
+          "h264_nvenc",
+          "h264_qsv",
+          "h264_amf"
+        ],
+        "scope": "FLOW_VIDEO_ENCODER for check-only exports; deliverables and Flow uploads only with FLOW_HW_DELIVERABLE=1 after a quality comparison with libx264 on that machine",
+        "default": "off (libx264)",
+        "conditions": "Encoder present in the verified FFmpeg build; GPU driver from the vendor, its licence reviewed on that machine; report and NOTICE name the encoder"
+      },
+      {
+        "id": "openssh_client",
+        "executables": [
+          "ssh"
+        ],
+        "scope": "scripts/remote_run.py only: one host alias from the user-local profile ~/.claude/flow-patch-local/remote-worker.json; check/push/run/pull inside its task folder; package scripts only; no deletion",
+        "default": "off (no profile, no connection)",
+        "conditions": "BatchMode (no password prompts); profile and machine details stay outside the package; SHA-256 compared after each transfer"
+      }
+    ]
+  }
 }

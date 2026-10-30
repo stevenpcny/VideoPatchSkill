@@ -2,6 +2,16 @@
 
 按新到旧排列。两条历史发版线（仓库线、本地线）在 v2.0 合并，其 v1.4、v1.5 编号指不同内容，按线别标注。
 
+## v2.6
+
+经包所有者批准新增三项可选组件，均默认不改变既有行为，范围记录在 `TOOL_POLICY.json` 的 `optional_components_owner_approved`。
+
+- 可选编译内核 `native/`（Rust，仅标准库，经 `ctypes` 调用）：色彩转换、补丁外色度均值、融合与缩放贴回。首次使用前与 NumPy 逐位比对，不一致即停止；`FLOW_KERNELS=auto|native|numpy`。合成 4K 测试 Python CPU 约 28 s → 18 s，总耗时约 18.4 s → 13.7 s（快速编码），输出逐字节相同。见[可选编译内核](references/native-kernels.md)。
+- 可选硬件编码 `FLOW_VIDEO_ENCODER=h264_nvenc|h264_qsv|h264_amf`：检查用导出可直接使用；交付与 Flow 上传须 `FLOW_HW_DELIVERABLE=1`（已在该机比较画质）。测试环境无显卡，未实测。
+- 远程执行脚本 `scripts/remote_run.py`：`check`／`push`／`run`／`pull`，只用 ssh 连接本地档案中的单个工作机，传输两端比对 SHA-256，不覆盖、不删除。
+- `doctor` 显示编译内核状态、编码器与构建中可用的硬件编码器。
+- 测试：smoke 17、security 15、remote_run 2；CI 在三个平台分别以 NumPy 与 Rust 内核运行全部测试。
+
 ## v2.5
 
 处理提速（完整导出与 v2.4 逐字节相同）、检查用导出、可选分段合成、三平台 CI 及若干正确性修正。不新增工具、依赖、编码器或服务授权。
