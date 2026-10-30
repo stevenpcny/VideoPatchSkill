@@ -421,15 +421,31 @@ _PASSES = {}
 
 def decode_pass(path, strict=False):
     """One full decode giving per-frame timestamps (seconds, demuxer time base, no rounding) and
-    128-bit murmur3 hashes. strict stops at the first decode error (-xerror), as output checks need."""
-    lines = run([FFMPEG, '-v', 'error', *(['-xerror'] if strict else []), *file_input(path), '-map', '0:v:0',
-                 '-fps_mode', 'passthrough', '-enc_time_base:v', 'demux', '-f', 'framehash', '-hash', 'murmur3',
-                 '-']).decode().splitlines()
+    128-bit murmur3 hashes. strict stops at the first decode error (-xerror), as output checks need,
+    and also decodes every audio stream: a payload hash alone does not prove the audio decodes."""
+    argv = [FFMPEG, '-v', 'error', *(['-xerror'] if strict else []), *file_input(path), '-map', '0:v:0',
+            *(['-map', '0:a?'] if strict else []), '-fps_mode', 'passthrough', '-enc_time_base:v', 'demux',
+            '-f', 'framehash', '-hash', 'murmur3', '-']
+    done = subprocess.run(argv, capture_output=True, timeout=float(os.environ.get('FLOW_COMMAND_TIMEOUT', '600')))
+    if done.returncode:
+        raise subprocess.CalledProcessError(done.returncode, argv, done.stdout, done.stderr)
+    # Some FFmpeg builds (6.1) report a failed decoder thread but still exit 0 under -xerror.
+    require(not (strict and done.stderr.strip()),
+            'Decode errors: '+done.stderr.decode(errors='replace').strip()[-1000:])
+    lines = done.stdout.decode().splitlines()
     tb = next(Fraction(line.split(':', 1)[1].strip()) for line in lines if line.startswith('#tb 0:'))
     rows = [[x.strip() for x in line.split(',')] for line in lines if line and not line.startswith('#')]
+    rows = [r for r in rows if r[0] == '0']  # output stream 0 is the video
     result = ([float(int(r[2])*tb) for r in rows], [r[5] for r in rows])
     _PASSES[local_media(path)] = result
     return result
+
+
+def forget(path):
+    """Drop this process's cached probe and decoding pass of a file that is about to be replaced."""
+    key = str(Path(path).expanduser().resolve())
+    _PROBED.pop(key, None)
+    _PASSES.pop(key, None)
 
 
 def probe(path, strict=False):
@@ -457,7 +473,9 @@ def _probe(path, strict=False):
             'Bake rotation into pixels first')
     require(s.get('sample_aspect_ratio', '1:1') in ('1:1', 'N/A'), 'Require square pixels')
     fps = Fraction(s['avg_frame_rate'])
-    require(fps > 0 and fps == Fraction(s['r_frame_rate']), 'Require constant frame rate')
+    require(fps > 0 and fps == Fraction(s['r_frame_rate']),
+            f"Require constant frame rate (avg_frame_rate {s['avg_frame_rate']}, r_frame_rate {s['r_frame_rate']}, "
+            f"time_base {s.get('time_base')}, duration_ts {s.get('duration_ts')}, nb_frames {s.get('nb_frames')})")
     # Equal rate fields alone do not prove CFR. Check decoded timestamps; the same decoding pass
     # also hashes every frame for later bit-exact comparisons.
     times = decode_pass(path, strict)[0]
@@ -1152,8 +1170,67 @@ def copy_unpatched_reason(info):
     tb = Fraction(info.get('time_base') or '0/1')
     if not tb or (1/Fraction(info['fps'])/tb).denominator != 1:
         return (f"source time base {info.get('time_base')} cannot hold {info['fps']} fps frame times exactly "
-                '(remux to MP4/MOV first to use --copy-unpatched)')
+                '(run `flow_patch.py regrid` first to use --copy-unpatched)')
     return None
+
+
+def regrid(source, output):
+    """Stream-copy SOURCE into MP4/MOV with every timestamp snapped to n/fps.
+
+    A plain `-c copy` remux keeps Matroska's millisecond rounding (and per-packet durations), so the
+    MP4 is not constant-rate. Each packet time here moves by under a quarter frame to its exact grid
+    slot; frame pixels, frame count, order and audio payload are unchanged, and all are checked."""
+    # The source's rate fields are rounded too (avg_frame_rate differs by FFmpeg version), so it is
+    # judged by r_frame_rate and its decoded timestamps; the output then passes the full strict probe.
+    data = json.loads(run([FFPROBE, '-v', 'error', '-show_streams', '-of', 'json',
+                           '-protocol_whitelist', 'file', local_media(source)]))
+    videos = [s for s in data['streams'] if s['codec_type'] == 'video']
+    require(len(videos) == 1, 'Require exactly one video stream')
+    fps = Fraction(videos[0]['r_frame_rate'])
+    require(fps > 0, 'Source has no frame rate')
+    times = decode_pass(source)[0]
+    require(times and abs(times[0]) < 0.001, 'Video must start near timestamp zero; remux explicitly')
+    shift = max(abs(t-n/fps) for n, t in enumerate(times))
+    require(shift < 0.25/fps, 'Frames are not within a quarter frame of n/fps; this is not timestamp rounding, '
+            'so regrid would retime the video. Normalize explicitly instead')
+    streams = {kind: sum(x['codec_type'] == kind for x in data['streams'])
+               for kind in ('audio', 'subtitle', 'data', 'attachment')}
+    n = fps.numerator
+    timescale = n if n >= 1000 else 90000 if 90000 % n == 0 else n*-(-1000//n)
+    tb = f'{fps.denominator}/{fps.numerator}'
+    snap = f'*TB*{fps.numerator}/{fps.denominator})'
+    # setts changed meaning between FFmpeg releases: newer builds evaluate the expressions in the input
+    # time base and round them into time_base themselves; 6.x/7.0 take the result as already in
+    # time_base. Each form is tried in turn and only one whose output passes every check is kept.
+    recipes = [f'setts=pts=PTS:dts=DTS:time_base={tb}',
+               f'setts=pts=round(PTS{snap}:dts=round(DTS{snap}:duration=1:time_base={tb}']
+    failures = []
+    for recipe in recipes:
+        cmd = [FFMPEG, '-v', 'error', '-n', '-copyts', *file_input(source), '-map', '0:v:0', '-map', '0:a?',
+               '-c', 'copy', '-bsf:v', recipe, '-video_track_timescale', str(timescale),
+               '-movflags', '+faststart', output]
+        try:
+            run(cmd)
+            out = probe(output, True)
+            require(Fraction(out['fps']) == fps and out['frames'] == len(times) and out['on_frame_grid'],
+                    'frame rate or frame count differs from the source')
+            break
+        except (ValueError, subprocess.CalledProcessError) as e:
+            failures.append(f'{recipe}: {e}')
+            forget(output)
+            with contextlib.suppress(FileNotFoundError):
+                Path(output).unlink()
+    else:
+        raise ValueError('Regridded output failed its check with every setts form:\n' + '\n'.join(failures))
+    require(frame_hashes(output) == decode_pass(source)[1], 'Regridded frames differ from the source')
+    if streams['audio']:
+        require(audio_hash(output) == audio_hash(source), 'Regridded audio payload differs from the source')
+    dropped = {k: v for k, v in streams.items() if k != 'audio' and v}
+    return {'source': str(Path(source).resolve()), 'output': str(output), 'fps': out['fps'], 'frames': out['frames'],
+            'max_timestamp_shift_ms': round(shift*1000, 3), 'decoded_frames_identical': True,
+            'audio_payload_identical': bool(streams['audio']) or None, 'audio_tracks': streams['audio'],
+            'not_carried': dropped, 'copy_unpatched_eligible': copy_unpatched_reason(out) is None,
+            'setts': recipe, 'command_argv': [str(x) for x in cmd]}
 
 
 def keyframe_indices(path, fps, frames):
@@ -1258,12 +1335,14 @@ def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, 
         raise CopyFallback(f'joined stream failed its decode/timing check ({e})') from e
     if joined['frames'] != frames:
         raise CopyFallback('joined stream has a different frame count')
-    probed = Future(); probed.set_result(joined)
-    _PROBED[local_media(out)] = probed  # verify() reuses this full probe of the unchanged file
     source_md5, output_md5 = source_md5.result(), frame_hashes(out)
     copied = [i for a, b, render in pieces if not render for i in range(a, b)]
     if len(output_md5) != frames or any(source_md5[i] != output_md5[i] for i in copied):
         raise CopyFallback('copied frames do not decode identically to the source')
+    # Only a joined file that passed every check is reused by verify(); a fallback render at the
+    # same path must get its own strict decode (issue #15).
+    probed = Future(); probed.set_result(joined)
+    _PROBED[local_media(out)] = probed
     for f in work.iterdir():
         f.unlink()
     work.rmdir()
@@ -1368,7 +1447,7 @@ def utf8_console():
 def main():
     utf8_console()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode',choices=['doctor','inspect','prepare','merge'])
+    parser.add_argument('mode',choices=['doctor','inspect','prepare','merge','regrid'])
     parser.add_argument('--config',type=Path)
     parser.add_argument('--source',type=Path)
     parser.add_argument('--output',type=Path)
@@ -1401,6 +1480,26 @@ def main():
     if args.mode == 'inspect':
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
+    if args.mode == 'regrid':
+        require(args.source is not None and args.output is not None, '--source and --output required')
+        output = output_path(args.output); report = output_path(output.with_suffix('.report.json'))
+        require(output.suffix.lower() in ('.mp4','.mov'), 'regrid output must be MP4/MOV')
+        require(not output.exists() and not report.exists(), 'Output/report exists; choose new name')
+        with tempfile.TemporaryDirectory(prefix='.flow-patch-',dir=output.parent) as tmp:
+            temp = Path(tmp)/output.name
+            result = regrid(args.source, temp)
+            result.update(output=str(output), output_sha256=sha(temp), source_sha256=sha(args.source))
+            with contextlib.ExitStack() as files:
+                dest = files.enter_context(private_output(output, binary=True))
+                rpt = files.enter_context(private_output(report))
+                with temp.open('rb') as src:
+                    shutil.copyfileobj(src, dest)
+                json.dump(result, rpt, ensure_ascii=False, indent=2)
+        if result['not_carried']:
+            print('NOTICE: Not carried to the output: '+', '.join(f'{v} {k}' for k, v in result['not_carried'].items())
+                  +' stream(s)', file=sys.stderr)
+        print(f"PASS: {output} (timestamps moved at most {result['max_timestamp_shift_ms']} ms; frames and "
+              f"audio unchanged)\nReport: {report}"); return
     require(args.config is not None and args.output is not None, '--config and --output required')
     require(args.mode == 'merge' or not (args.frames or args.preview or args.copy_unpatched),
             '--frames/--preview apply to merge only; Flow uploads always use the full prepare encode')
@@ -1453,6 +1552,7 @@ def main():
                     reason = (str(e) if isinstance(e, CopyFallback) else
                               'FFmpeg could not cut or join the source GOPs')
                     shutil.rmtree(temp.parent/'pieces', ignore_errors=True)
+                    forget(temp)
                     with contextlib.suppress(FileNotFoundError):
                         temp.unlink()
             if reason is not None:
@@ -1461,6 +1561,10 @@ def main():
         count = segment_count(info['frames']) if args.mode == 'merge' and span is None else 1
         if smart is not None:
             plan = plan_used
+            if smart['copied_frames'] == 0:
+                notices.append('--copy-unpatched copied no frames: every source GOP holds a patch frame, '
+                               'so it saved nothing over a full render')
+                print('NOTICE: '+notices[-1], file=sys.stderr)
         elif count > 1:
             plan,cmd = merge_segmented(cfg,info,plan,temp,count,preset)
         else:
