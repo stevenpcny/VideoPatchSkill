@@ -228,9 +228,27 @@ def bgr_to_yuv420(bgr, color):
     return buf
 
 
+_PROBED = {}
+
+
+def prefetch_probes(paths):
+    """Start probing several inputs at once; probe() then picks up the pending result."""
+    pool = ThreadPoolExecutor(max(1, len(set(paths))))
+    for path in dict.fromkeys(local_media(p) for p in paths):
+        _PROBED[path] = pool.submit(_probe, path)
+    pool.shutdown(wait=False)
+
+
 def probe(path):
     path = local_media(path)
-    data = json.loads(run([FFPROBE, '-v', 'error', '-count_frames', '-show_streams',
+    if path in _PROBED:
+        return _PROBED[path].result()
+    return _probe(path)
+
+
+def _probe(path):
+    # Headers only; the single decoding pass below counts frames and reads timestamps.
+    data = json.loads(run([FFPROBE, '-v', 'error', '-show_streams',
                            '-of', 'json', '-protocol_whitelist', 'file', path]))
     videos = [s for s in data['streams'] if s['codec_type'] == 'video']
     require(len(videos) == 1, 'Require exactly one video stream')
@@ -248,10 +266,12 @@ def probe(path):
     fps = Fraction(s['avg_frame_rate'])
     require(fps > 0 and fps == Fraction(s['r_frame_rate']), 'Require constant frame rate')
     # Equal rate fields alone do not prove CFR. Check decoded timestamps.
-    ts = json.loads(run([FFPROBE, '-v', 'error', '-select_streams', 'v:0',
-                         '-show_frames', '-show_entries', 'frame=best_effort_timestamp_time',
-                         '-of', 'json', '-protocol_whitelist', 'file', path]))['frames']
-    times = [float(f['best_effort_timestamp_time']) for f in ts]
+    decoded = json.loads(run([FFPROBE, '-v', 'error', '-select_streams', 'v:0', '-count_frames',
+                              '-show_frames', '-show_entries',
+                              'stream=nb_read_frames:frame=best_effort_timestamp_time',
+                              '-of', 'json', '-protocol_whitelist', 'file', path]))
+    s['nb_read_frames'] = decoded['streams'][0]['nb_read_frames']
+    times = [float(f['best_effort_timestamp_time']) for f in decoded['frames']]
     require(len(times) > 0, 'No decoded frames')
     require(all(abs((b-a)-float(1/fps)) < max(0.0001, float(1/fps)*0.002)
                 for a, b in zip(times, times[1:])), 'VFR or timestamp gaps; normalize explicitly')
@@ -309,9 +329,14 @@ class Reader:
         self.color = color or stream_color(path)
         self.log = tempfile.TemporaryFile()
         fmt = 'bgr24' if self.color['rgb_input'] else 'yuv444p'
+        # State the range on both sides: older FFmpeg (e.g. 6.1) otherwise squeezes full-range
+        # (yuvj) input into limited range when converting to yuv444p.
+        rng = 'pc' if self.color['range'] == 'pc' else 'tv'
+        convert = (['-pix_fmt', fmt] if self.color['rgb_input'] else
+                   ['-vf', f'scale=in_range={rng}:out_range={rng},format={fmt}'])
         self.p = subprocess.Popen([FFMPEG, '-v', 'error', '-noautorotate', *file_input(path),
                                    '-map', '0:v:0', '-an', '-fps_mode', 'passthrough',
-                                   '-f', 'rawvideo', '-pix_fmt', fmt, '-'],
+                                   *convert, '-f', 'rawvideo', '-'],
                                   stdout=subprocess.PIPE, stderr=self.log)
         self.index = -1
         self.last = None
@@ -402,7 +427,28 @@ class Reader:
         self.log.close()
 
 
+def keyframed(value):
+    return isinstance(value, list) and len(value) > 0 and isinstance(value[0], dict)
+
+
+def static_matte(spec):
+    return not keyframed(spec['region']) and not any(keyframed(b) for b in spec.get('protect', []))
+
+
+_MATTES = {}
+
+
 def matte(spec, frame, size):
+    """Soft matte; one without keyframes is computed once and returned as a fresh copy."""
+    if not static_matte(spec):
+        return _matte(spec, frame, size)
+    key = (json.dumps(spec, sort_keys=True), tuple(size))
+    if key not in _MATTES:
+        _MATTES[key] = _matte(spec, frame, size)
+    return _MATTES[key].copy()
+
+
+def _matte(spec, frame, size):
     checked_size(size)
     x, y, w, h = rectangle(spec['region'], frame, size)
     feather = float(spec.get('feather', 16))
@@ -423,8 +469,14 @@ def matte(spec, frame, size):
 
 
 def blend(original, patch, m, method, levels):
+    # Element-wise steps run in row bands (same expressions, so identical values);
+    # OpenCV's pyramid calls are already multithreaded.
+    out = np.empty(original.shape, np.float32)
     if method == 'alpha':
-        out = original.astype(np.float32)*(1-m[:,:,None])+patch.astype(np.float32)*m[:,:,None]
+        def work(a, b):
+            mm = m[a:b, :, None]
+            out[a:b] = original[a:b].astype(np.float32)*(1-mm)+patch[a:b].astype(np.float32)*mm
+        in_bands(m.shape[0], work)
     else:
         require(method == 'multiband', 'Unknown blend method')
         require(isinstance(levels, int) and 1 <= levels <= 6 and min(m.shape) >= 2**levels*2,
@@ -432,16 +484,25 @@ def blend(original, patch, m, method, levels):
         ga, gb, gm = [original.astype(np.float32)], [patch.astype(np.float32)], [m]
         for _ in range(levels):
             ga.append(cv2.pyrDown(ga[-1])); gb.append(cv2.pyrDown(gb[-1])); gm.append(cv2.pyrDown(gm[-1]))
-        out = ga[-1]*(1-gm[-1][:,:,None])+gb[-1]*gm[-1][:,:,None]
+        level = ga[-1]*(1-gm[-1][:,:,None])+gb[-1]*gm[-1][:,:,None]
         for k in range(levels-1, -1, -1):
             size = (ga[k].shape[1], ga[k].shape[0])
-            la = ga[k]-cv2.pyrUp(ga[k+1], dstsize=size)
-            lb = gb[k]-cv2.pyrUp(gb[k+1], dstsize=size)
-            out = cv2.pyrUp(out, dstsize=size)+la*(1-gm[k][:,:,None])+lb*gm[k][:,:,None]
+            ua, ub, uo = (cv2.pyrUp(v, dstsize=size) for v in (ga[k+1], gb[k+1], level))
+            level = out if k == 0 else np.empty(ga[k].shape, np.float32)
+            def work(a, b, k=k, ua=ua, ub=ub, uo=uo, level=level):
+                mm = gm[k][a:b, :, None]
+                la = ga[k][a:b]-ua[a:b]
+                lb = gb[k][a:b]-ub[a:b]
+                level[a:b] = uo[a:b]+la*(1-mm)+lb*mm
+            in_bands(size[1], work)
     # Never let pyramid bleed change protected or out-of-support pixels.
-    out = np.clip(out, 0, 255).round().astype(np.uint8)
-    out[m == 0] = original[m == 0]
-    return out
+    result = np.empty(original.shape, np.uint8)
+    def finish(a, b):
+        result[a:b] = np.clip(out[a:b], 0, 255).round().astype(np.uint8)
+        keep = m[a:b] == 0
+        result[a:b][keep] = original[a:b][keep]
+    in_bands(m.shape[0], finish)
+    return result
 
 
 def resolved(base, value):
@@ -529,11 +590,15 @@ def merge_plan(cfg, info):
                 'Use alpha blending for protected mouth regions; multiband can mix low frequencies')
         fade = p.get('fade_frames', 0)
         require(isinstance(fade, int) and 0 <= fade <= len(indices)//2, 'Invalid fade_frames')
+        affine_spec = p.get('source_to_generated_affine', [1,0,0,0,1,0])
+        static = static_matte(p['matte']) and not keyframed(affine_spec)
         for i in range(*p['target']):
             crop = rectangle(p['crop'], i, info['size'])
             require(abs((crop[2]/crop[3])/(size[0]/size[1])-1) < 0.005, 'Crop/work aspect mismatch')
+            if static and i > p['target'][0]:
+                continue  # Same matte and affine on every frame: the first check covers them all.
             m = matte(p['matte'], i, size)
-            affine = curve(p.get('source_to_generated_affine', [1,0,0,0,1,0]), i).reshape(2,3)
+            affine = curve(affine_spec, i).reshape(2,3)
             require(abs(np.linalg.det(affine[:,:2])) > 1e-6, 'Singular affine')
             valid = cv2.warpAffine(np.ones((size[1],size[0]), np.float32), affine,
                                    tuple(size), flags=cv2.INTER_LINEAR|cv2.WARP_INVERSE_MAP,
@@ -638,19 +703,29 @@ def process(cfg, info, mode, out, plan):
                             patch = cv2.warpAffine(patch,affine,ws,
                                                   flags=cv2.INTER_LINEAR|cv2.WARP_INVERSE_MAP,
                                                   borderMode=cv2.BORDER_CONSTANT)
-                            patch = np.clip(patch.astype(float)*p.get('gain_bgr',[1,1,1])+
-                                            p.get('offset_bgr',[0,0,0]),0,255).round().astype(np.uint8)
+                            gain, offset = p.get('gain_bgr',[1,1,1]), p.get('offset_bgr',[0,0,0])
+                            if list(gain) != [1,1,1] or list(offset) != [0,0,0]:  # identity is a no-op
+                                patch = np.clip(patch.astype(float)*gain+offset,0,255).round().astype(np.uint8)
                             m = matte(p['matte'],i,ws); fade = p.get('fade_frames',0)
                             if fade:
                                 k = i-p['target'][0]
                                 m *= min(1,k/fade,(len(q['indices'])-1-k)/fade)
                             merged = blend(original,patch,m,p.get('blend','alpha'),p.get('levels',5))
-                            delta = cv2.resize(merged.astype(float)-original.astype(float),(w,h),
-                                               interpolation=cv2.INTER_LINEAR)
                             # Enforce support again after scaling (including protected mouth).
                             support = cv2.resize(m,(w,h),interpolation=cv2.INTER_NEAREST)>0
-                            delta[~support] = 0
-                            scene[y:y+h,x:x+w] = np.clip(roi.astype(float)+delta,0,255).round().astype(np.uint8)
+                            if (w, h) == ws:
+                                # Same-size resizes are exact copies, so roi+delta is merged itself.
+                                scene[y:y+h,x:x+w] = merged
+                            else:
+                                diff = np.empty(merged.shape, float)
+                                def work(a, b):
+                                    diff[a:b] = merged[a:b].astype(float)-original[a:b].astype(float)
+                                in_bands(diff.shape[0], work)
+                                delta = cv2.resize(diff,(w,h),interpolation=cv2.INTER_LINEAR)
+                                def work(a, b, x=x, y=y):
+                                    d = delta[a:b]; d[~support[a:b]] = 0
+                                    scene[y+a:y+b,x:x+w] = np.clip(roi[a:b].astype(float)+d,0,255).round().astype(np.uint8)
+                                in_bands(h, work)
                             changed[y:y+h,x:x+w] |= support
                         _, Yr, Ur, Vr = planes420(bgr_to_yuv420(scene, info['color']), x1-x0, y1-y0)
                         Y[y0:y1,x0:x1][changed] = Yr[changed]
@@ -683,15 +758,21 @@ def process(cfg, info, mode, out, plan):
 
 
 def verify(source, output, expected, copy_audio):
-    result = probe(output)
-    require(result['size'] == expected['size'] and result['frames'] == expected['frames']
-            and result['fps'] == expected['fps'] and result['audio'] == expected['audio'],
-            'Output size, frames, fps or audio presence mismatch')
-    run([FFMPEG,'-v','error','-xerror',*file_input(output),'-f','null','-'])
-    ah = None
-    if copy_audio and result['audio']:
-        ah = audio_hash(source)
-        require(ah == audio_hash(output), 'Original audio payload changed')
+    # Independent full reads of the output run side by side; every check still runs.
+    with ThreadPoolExecutor(4) as pool:
+        probed = pool.submit(probe, output)
+        decoded = pool.submit(run, [FFMPEG,'-v','error','-xerror',*file_input(output),'-f','null','-'])
+        hashes = ([pool.submit(audio_hash, source), pool.submit(audio_hash, output)]
+                  if copy_audio and expected['audio'] else None)
+        result = probed.result()
+        require(result['size'] == expected['size'] and result['frames'] == expected['frames']
+                and result['fps'] == expected['fps'] and result['audio'] == expected['audio'],
+                'Output size, frames, fps or audio presence mismatch')
+        decoded.result()
+        ah = None
+        if hashes:
+            ah = hashes[0].result()
+            require(ah == hashes[1].result(), 'Original audio payload changed')
     return {'decode_pass':True, 'output':result, 'audio_payload_sha256':ah}
 
 
@@ -717,7 +798,9 @@ def main():
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
     require(args.config is not None and args.output is not None, '--config and --output required')
-    cfg = load(args.config.resolve()); info = validate_source(cfg)
+    cfg = load(args.config.resolve())
+    prefetch_probes([cfg['source'], *(p['generated'] for p in cfg.get('patches', []))])
+    info = validate_source(cfg)
     plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info)
     if args.dry_run:
         print(json.dumps({'mode':args.mode,'config':cfg,'source_info':info,'plan':plan},

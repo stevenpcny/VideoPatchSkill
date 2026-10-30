@@ -172,6 +172,28 @@ class Smoke(unittest.TestCase):
         self.assertEqual(rpt['output']['core_in_upload'],[0,10])
         self.assertFalse(rpt['output']['audio'])
 
+    def test_09_cached_matte_and_banded_blend_are_exact(self):
+        spec=dict(region=[8,6,80,60],shape='ellipse',feather=10,protect=[[30,40,20,10]])
+        first=fp.matte(spec,0,[96,72]); first*=0
+        self.assertGreater(fp.matte(spec,5,[96,72]).max(),0.99,'cached matte was mutated')
+        np.testing.assert_array_equal(fp.matte(spec,5,[96,72]),fp._matte(spec,5,[96,72]))
+        rng=np.random.default_rng(3)
+        a,b=(rng.integers(0,256,(72,96,3),dtype=np.uint8) for _ in range(2))
+        m=fp._matte(dict(region=[8,6,80,60],shape='ellipse',feather=10),0,[96,72])
+        # Unbanded reference formulas from v2.4.
+        ref=a.astype(np.float32)*(1-m[:,:,None])+b.astype(np.float32)*m[:,:,None]
+        ga,gb,gm=[a.astype(np.float32)],[b.astype(np.float32)],[m]
+        for _ in range(2):
+            ga.append(cv2.pyrDown(ga[-1])); gb.append(cv2.pyrDown(gb[-1])); gm.append(cv2.pyrDown(gm[-1]))
+        mb=ga[-1]*(1-gm[-1][:,:,None])+gb[-1]*gm[-1][:,:,None]
+        for k in (1,0):
+            size=(ga[k].shape[1],ga[k].shape[0])
+            la=ga[k]-cv2.pyrUp(ga[k+1],dstsize=size); lb=gb[k]-cv2.pyrUp(gb[k+1],dstsize=size)
+            mb=cv2.pyrUp(mb,dstsize=size)+la*(1-gm[k][:,:,None])+lb*gm[k][:,:,None]
+        for method,levels,expect in (('alpha',5,ref),('multiband',2,mb)):
+            expect=np.clip(expect,0,255).round().astype(np.uint8); expect[m==0]=a[m==0]
+            np.testing.assert_array_equal(fp.blend(a,b,m,method,levels),expect)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

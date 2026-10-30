@@ -45,7 +45,7 @@ def main():
             if j is None:
                 continue
             x,y,w,h = rectangle(p['crop'],i,info['size'])
-            a = cv2.resize(sr.get(i)[y:y+h,x:x+w],ws)
+            a = cv2.resize(sr.region(i,(x,y,w,h)),ws)  # same values as the full-frame slice
             b = cv2.resize(gr.get(j),ws)
             m = matte(p['matte'],i,ws)
             excluded = cv2.dilate((m>0).astype(np.uint8),np.ones((15,15),np.uint8))
