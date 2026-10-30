@@ -28,6 +28,8 @@ v2.0 合并仓库线（v1.4 身体露肤、v1.5 局部补丁经验、v1.5.1 色�
 
 v2.1 合并另一工作分支的多人交界／局部供体、表演保护、可编辑工程交付指南及验收字段；全部处理脚本、测试和依赖保持 v2.0 字节一致。本次实际验证见根目录 VALIDATION.json；未执行真实生成、实片视觉验收或 Resolve 重开／迁移测试，不把历史环境测试升级为通用兼容保证。
 
+v2.8 把探测、成片解码错误检查与逐帧哈希合并为一次 FFmpeg 解码。Linux（FFmpeg 6.1.1）两种内核：smoke 19、security 16、qc_tools 5、color_pipeline 9、remote_run 4、ffmpeg 回归 6 全过；读取器寻址四种样例仍与顺序解码逐字节相同；1080p 2 分钟整片与 `--copy-unpatched`、4K 合成的输出哈希与改动前相同。
+
 v2.7 新增 `merge --copy-unpatched`。Linux（FFmpeg 6.1.1）两种内核各跑一遍：smoke 19、security 16、qc_tools 5、color_pipeline 9、remote_run 4、ffmpeg 回归 6 全过（含 issue #8 的 remote_run 参数与清单核验修正）。B 帧源片（重排延迟 2）补丁在中段与片头两种情况：复制帧与源片逐帧 murmur3 相同，帧数、恒定帧率与音轨载荷通过。无 B 帧源片（1080p 2 分钟）补丁在片尾：98.4 s → 35.6 s。未在第三方播放器或剪辑软件中验证码流中途切换参数集。
 
 v2.6 新增可选编译内核、硬件编码与远程执行脚本（见[版本记录](../CHANGELOG.md)）。Linux（FFmpeg 6.1.1）以 `FLOW_KERNELS=native` 与 `numpy` 各跑一遍：smoke 17、security 15、qc_tools 5、color_pipeline 9、remote_run 2、ffmpeg 回归 6 全过；两种内核的合成输出逐字节相同，并与 v2.4 输出相同。remote_run 用本地替身 ssh 测试，未连接真实工作机；硬件编码因无显卡未实测。

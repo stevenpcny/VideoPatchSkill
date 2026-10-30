@@ -414,14 +414,30 @@ def prefetch_probes(paths, cache=None):
     pool.shutdown(wait=False)
 
 
-def probe(path):
+_PASSES = {}
+
+
+def decode_pass(path, strict=False):
+    """One full decode giving per-frame timestamps (seconds, demuxer time base, no rounding) and
+    128-bit murmur3 hashes. strict stops at the first decode error (-xerror), as output checks need."""
+    lines = run([FFMPEG, '-v', 'error', *(['-xerror'] if strict else []), *file_input(path), '-map', '0:v:0',
+                 '-fps_mode', 'passthrough', '-enc_time_base:v', 'demux', '-f', 'framehash', '-hash', 'murmur3',
+                 '-']).decode().splitlines()
+    tb = next(Fraction(line.split(':', 1)[1].strip()) for line in lines if line.startswith('#tb 0:'))
+    rows = [[x.strip() for x in line.split(',')] for line in lines if line and not line.startswith('#')]
+    result = ([float(int(r[2])*tb) for r in rows], [r[5] for r in rows])
+    _PASSES[local_media(path)] = result
+    return result
+
+
+def probe(path, strict=False):
     path = local_media(path)
     if path in _PROBED:
         return _PROBED[path].result()
-    return _probe(path)
+    return _probe(path, strict)
 
 
-def _probe(path):
+def _probe(path, strict=False):
     # Headers only; the single decoding pass below counts frames and reads timestamps.
     data = json.loads(run([FFPROBE, '-v', 'error', '-show_streams',
                            '-of', 'json', '-protocol_whitelist', 'file', path]))
@@ -440,13 +456,9 @@ def _probe(path):
     require(s.get('sample_aspect_ratio', '1:1') in ('1:1', 'N/A'), 'Require square pixels')
     fps = Fraction(s['avg_frame_rate'])
     require(fps > 0 and fps == Fraction(s['r_frame_rate']), 'Require constant frame rate')
-    # Equal rate fields alone do not prove CFR. Check decoded timestamps.
-    decoded = json.loads(run([FFPROBE, '-v', 'error', '-select_streams', 'v:0', '-count_frames',
-                              '-show_frames', '-show_entries',
-                              'stream=nb_read_frames:frame=best_effort_timestamp_time',
-                              '-of', 'json', '-protocol_whitelist', 'file', path]))
-    s['nb_read_frames'] = decoded['streams'][0]['nb_read_frames']
-    times = [float(f['best_effort_timestamp_time']) for f in decoded['frames']]
+    # Equal rate fields alone do not prove CFR. Check decoded timestamps; the same decoding pass
+    # also hashes every frame for later bit-exact comparisons.
+    times = decode_pass(path, strict)[0]
     require(len(times) > 0, 'No decoded frames')
     # A coarse time base (e.g. MKV milliseconds) rounds each step by up to one tick.
     tick = float(Fraction(s.get('time_base', '0/1'))) if s.get('time_base') else 0.0
@@ -457,7 +469,6 @@ def _probe(path):
     audio = next((a for a in data['streams'] if a['codec_type'] == 'audio'), None)
     require(audio is None or abs(float(audio.get('start_time', 0))) < 0.001,
             'Audio starts at a nonzero timestamp; normalize offsets explicitly')
-    require(len(times) == int(s['nb_read_frames']), 'Frame count mismatch')
     # Frame n at n/fps (within a quarter frame) lets readers seek straight to a frame.
     grid = all(abs(t-n/fps) < 0.25/fps for n, t in enumerate(times))
     counts = {kind: sum(x['codec_type'] == kind for x in data['streams'])
@@ -1154,10 +1165,9 @@ def keyframe_indices(path, fps, frames):
 
 
 def frame_hashes(path):
-    """128-bit murmur3 of every decoded frame (about the cost of decoding; MD5 is ~3x slower)."""
-    lines = run([FFMPEG, '-v', 'error', *file_input(path), '-map', '0:v:0', '-fps_mode', 'passthrough',
-                 '-f', 'framehash', '-hash', 'murmur3', '-']).decode().splitlines()
-    return [line.rsplit(',', 1)[1].strip() for line in lines if line and not line.startswith('#')]
+    """Per-frame murmur3 hashes, reusing this process's decoding pass of the file when there is one."""
+    key = local_media(path)
+    return (_PASSES.get(key) or decode_pass(path))[1]
 
 
 def merge_copy_unpatched(cfg, info, plans, out, preset=None):
@@ -1231,16 +1241,15 @@ def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, 
             *file_input(cfg['source']), '-map', '0:v:0', '-map', '1:a:0?', '-c', 'copy',
             '-bsf:v', 'h264_mp4toannexb,'+colour_tags(info['color']), '-movflags', '+faststart', str(out)]
     run(join)
-    probe_job, output_job = checks.submit(_probe, str(out)), checks.submit(frame_hashes, out)
     try:
-        joined = probe_job.result()
-    except ValueError as e:
-        raise CopyFallback(f'joined stream timing failed its check ({e})') from e
+        joined = _probe(str(out), strict=True)  # one strict decode: timing, errors and frame hashes
+    except (ValueError, subprocess.CalledProcessError) as e:
+        raise CopyFallback(f'joined stream failed its decode/timing check ({e})') from e
     if joined['frames'] != frames:
         raise CopyFallback('joined stream has a different frame count')
     probed = Future(); probed.set_result(joined)
     _PROBED[local_media(out)] = probed  # verify() reuses this full probe of the unchanged file
-    source_md5, output_md5 = source_md5.result(), output_job.result()
+    source_md5, output_md5 = source_md5.result(), frame_hashes(out)
     copied = [i for a, b, render in pieces if not render for i in range(a, b)]
     if len(output_md5) != frames or any(source_md5[i] != output_md5[i] for i in copied):
         raise CopyFallback('copied frames do not decode identically to the source')
@@ -1256,17 +1265,15 @@ def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, 
 
 
 def verify(source, output, expected, copy_audio):
-    # Independent full reads of the output run side by side; every check still runs.
-    with ThreadPoolExecutor(4) as pool:
-        probed = pool.submit(probe, output)
-        decoded = pool.submit(run, [FFMPEG,'-v','error','-xerror',*file_input(output),'-f','null','-'])
+    # One strict decoding pass checks errors, frame count and timing; audio hashes run alongside.
+    with ThreadPoolExecutor(3) as pool:
+        probed = pool.submit(probe, output, True)
         hashes = ([pool.submit(audio_hash, source), pool.submit(audio_hash, output)]
                   if copy_audio and expected['audio'] else None)
         result = probed.result()
         require(result['size'] == expected['size'] and result['frames'] == expected['frames']
                 and result['fps'] == expected['fps'] and result['audio'] == expected['audio'],
                 'Output size, frames, fps or audio presence mismatch')
-        decoded.result()
         ah = None
         if hashes:
             ah = hashes[0].result()
