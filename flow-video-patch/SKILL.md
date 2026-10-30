@@ -78,7 +78,7 @@ description: Prepare masked video clips for Flow and composite returned patches 
 
 `scripts/flow_patch.py`：环境检查、媒体探测、带前后参照的蒙块素材、单/多人贴回、alpha/多频段融合、显式帧映射、固定调色、帧数/全解码/音轨验证。支持8位SDR恒定帧率、方形像素、零起始时间、无旋转元数据的单视频流；其他源先明确转换。输出为 8 位 4:2:0 H.264、只带第一条音轨；源片为 4:2:2／4:4:4 或带其他音轨、字幕、数据流时，报告和终端以 `NOTICE` 说明，交付时告知用户。色彩矩阵仅接受 BT.709/BT.601（无标签按≥720行709、否则601，报告标注 assumed），YUV↔BGR 在脚本内精确换算，输出沿用源矩阵与范围并写入色彩标签；多轮合成不再累积偏色。
 
-只重编码有补丁的片段：`merge --copy-unpatched` 按原片关键帧切块，未修补的 GOP 原样复制、只渲染含补丁的 GOP，复制部分逐帧哈希须与原片相同，否则自动整片渲染；交付前在目标播放器／剪辑软件中实测（见[参数与命令](references/parameters.md)）。
+只重编码有补丁的片段：`merge --copy-unpatched` 按原片关键帧切块，未修补的 GOP 原样复制、只渲染含补丁的 GOP，复制部分逐帧哈希须与原片相同，否则自动整片渲染；交付前在目标播放器／剪辑软件中实测（见[参数与命令](references/parameters.md)）。MKV 等毫秒时间基源片先用 `flow_patch.py regrid` 无损规整时间戳到帧网格（不重编码，逐帧与音轨载荷校验），普通 `-c copy` 转封装不通过帧率检查。
 
 检查用导出：`merge --frames START:END` 只导出指定原片帧、`--preview` 用快速编码，供调参反复查看；报告标为不可交付，最终交付与视觉验收必须用完整导出。分段多进程合成 `FLOW_SEGMENTS` 为可选项，码流与单进程不同。
 

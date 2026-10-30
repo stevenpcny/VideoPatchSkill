@@ -1,6 +1,8 @@
 # Flow 视频局部修补技能
 
-供 Codex 等能读取文件、执行 Python 的助手使用的本地视频修补技能，当前版本 **v2.8**。
+供 Codex 等能读取文件、执行 Python 的助手使用的本地视频修补技能，当前版本 **v2.9**。
+
+v2.9：新增 `flow_patch.py regrid`，把 MKV 等毫秒时间戳的源片无损规整到帧网格（不重编码，逐帧与音轨校验），之后可用 `--copy-unpatched`；发布脚本在 Windows 也生成相同 ZIP。
 
 v2.8：每个文件只完整解码一次，探测、错误检查与逐帧哈希合一；长片整片合成约快 17%，`--copy-unpatched` 约快一倍，输出不变。
 
@@ -26,7 +28,7 @@ v2.5：完整导出与 v2.4 逐字节相同、速度约快一倍；新增检查�
 
 ## 分发文件
 
-[下载 v2.8 ZIP](dist/flow-video-patch-v2.8.zip) · [ZIP SHA-256](dist/flow-video-patch-v2.8.zip.sha256)
+[下载 v2.9 ZIP](dist/flow-video-patch-v2.9.zip) · [ZIP SHA-256](dist/flow-video-patch-v2.9.zip.sha256)
 
 包内 `SHA256SUMS.json` 记录各文件摘要。第三方工具由每台电脑独立安装；不随包附带运行环境、媒体、模型或真实项目配置。
 
@@ -34,7 +36,7 @@ v2.5：完整导出与 v2.4 逐字节相同、速度约快一倍；新增检查�
 
 默认只在 [白名单及用途](flow-video-patch/TOOL_POLICY.json)内运行。清单外先停止，按 [审批流程](flow-video-patch/references/tool-policy.md)核查具体版本／构建、许可证、商业用途及安全条件，核查通过且用户明确同意后才能用；不自动安装、换工具或用临时脚本绕行。实际调用另附本地清单，新增工具不自动归入旧版权报告。
 
-这是技能执行规则，没有在接收电脑部署强制沙箱。需要强制禁止任意额外工具时，须配置并验证宿主及操作系统权限控制。公开仓库中的 v1.2–v1.5、v2.0、v2.3–v2.7 历史 ZIP 保留用于追溯，新使用者选 v2.8。
+这是技能执行规则，没有在接收电脑部署强制沙箱。需要强制禁止任意额外工具时，须配置并验证宿主及操作系统权限控制。公开仓库中的 v1.2–v1.5、v2.0、v2.3–v2.8 历史 ZIP 保留用于追溯，新使用者选 v2.9。
 
 ## 验证与安全状态
 
@@ -49,7 +51,7 @@ python tests/remote_run_test.py
 sh tests/ffmpeg_regression.sh
 ```
 
-v2.8 的实测结果与验证范围记录在 [VALIDATION.json](flow-video-patch/VALIDATION.json)；每次推送由 GitHub Actions 在 Linux／macOS／Windows 复跑全部合成测试，接收机器仍需复验。技能限制媒体输入协议、独占创建输出，并包含权限、尺寸预算和超时防护。
+v2.9 的实测结果与验证范围记录在 [VALIDATION.json](flow-video-patch/VALIDATION.json)；每次推送由 GitHub Actions 在 Linux／macOS／Windows 复跑全部合成测试，接收机器仍需复验。技能限制媒体输入协议、独占创建输出，并包含权限、尺寸预算和超时防护。
 
 **外部运行环境仍须安全更新。** 历史审计中 FFmpeg 8.1 的更新事项继续保留；8.1 分支采用至少 8.1.2 或供应商确认已回补相应安全修复的构建。x264 的公告适用性仍待确认。测试通过不能视为全部依赖安全通过，详细边界见安全说明。[FFmpeg 官方安全公告](https://ffmpeg.org/security.html)
 

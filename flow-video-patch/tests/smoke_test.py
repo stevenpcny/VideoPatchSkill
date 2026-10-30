@@ -433,6 +433,35 @@ class Smoke(unittest.TestCase):
         out.unlink(); out.with_suffix('.report.json').unlink()
         self.assertIn('exists',cli('merge','--config',cfg,'--output',out,ok=False).stderr)
 
+    def test_22_regrid_millisecond_mkv(self):
+        # A plain -c copy remux keeps the millisecond rounding and fails the CFR check (issue #13);
+        # regrid snaps each timestamp to n/fps and proves frames and audio are unchanged.
+        src=self.base/'regrid.mkv'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=192x128:r=24000/1001','-f','lavfi',
+                '-i','sine=sample_rate=48000:duration=5','-frames:v','96','-c:v','libx264','-pix_fmt','yuv420p',
+                '-x264-params','keyint=24:min-keyint=24:scenecut=0:bframes=3','-c:a','flac','-shortest',src])
+        plain=self.base/'regrid-plain.mp4'
+        fp.run([fp.FFMPEG,'-v','error','-n','-i',src,'-map','0','-c','copy',plain])
+        with self.assertRaises(ValueError):
+            fp.probe(plain)
+        out=self.base/'regrid.mp4'
+        r=cli('regrid','--source',src,'--output',out)
+        self.assertIn('frames and audio unchanged',r.stdout)
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
+        self.assertEqual((rpt['frames'],rpt['fps'],rpt['audio_payload_identical']),(96,'24000/1001',True))
+        self.assertLess(rpt['max_timestamp_shift_ms'],1)
+        self.assertTrue(rpt['copy_unpatched_eligible'])
+        self.assertEqual(fp.decode_pass(out)[1],fp.decode_pass(src)[1])
+        self.assertIn('exists',cli('regrid','--source',src,'--output',out,ok=False).stderr)
+        # The regridded file now takes the copy path.
+        p=self.patch(generated=str(out),target=[26,34],generated_start=26,crop=[0,0,192,128],work_size=[192,128])
+        p.pop('frame_map')
+        cfg=self.config('regrid',source=str(out),source_size=[192,128],fps='24000/1001',patches=[p])
+        merged=self.base/'regrid-copy.mp4'
+        r=cli('merge','--config',cfg,'--output',merged,'--copy-unpatched')
+        self.assertNotIn('not used',r.stderr)
+        self.assertGreater(json.loads(merged.with_suffix('.report.json').read_text(encoding='utf-8'))['copy_unpatched']['copied_frames'],0)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)

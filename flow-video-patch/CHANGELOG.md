@@ -2,6 +2,13 @@
 
 按新到旧排列。两条历史发版线（仓库线、本地线）在 v2.0 合并，其 v1.4、v1.5 编号指不同内容，按线别标注。
 
+## v2.9
+
+- 新增 `flow_patch.py regrid --source X.mkv --output X.mp4`（issue #13）：普通 `-c copy` 把 MKV 转为 MP4 时保留毫秒取整的时间戳与包时长（如 23.976 fps 得到平均帧率 240000/10009），恒定帧率检查拒收。`regrid` 码流复制并把每个视频包时间戳移到最近的 n/fps（实测不到 1 ms），之后严格探测、逐帧解码哈希与音轨载荷均须与源片相同，报告记录最大移动量与命令；帧离网格超过四分之一帧即拒绝，不做静默重定时。CFR 检查不放宽。规整后的文件可用 `--copy-unpatched`。
+- `tools/release.py` 在所有系统都写 LF（issue #12）：此前 Windows 重建时 `TOOL_POLICY.json`、`SHA256SUMS.json` 与 `.sha256` 变为 CRLF，ZIP 哈希不同且工作区出现改动。
+- `--copy-unpatched` 复制 0 帧（每个 GOP 都含补丁帧）时给出 NOTICE，说明未省时间（issue #11 D）。
+- 测试：smoke 22（新增 test_22：普通转封装被拒、regrid 后帧与音轨不变并可走 GOP 复制）。
+
 ## v2.8
 
 - 每个文件只完整解码一次：一次 FFmpeg 解码同时给出逐帧时间戳、帧数与 murmur3 逐帧哈希。探测用它检查恒定帧率；成片校验用严格模式（`-xerror`），取代原先 ffprobe 探测解码加一次 `-xerror` 全解码；`--copy-unpatched` 的源片哈希直接取自探测时的解码，拼接后的严格解码兼作成片校验。检查项不变，输出不变。

@@ -1152,8 +1152,42 @@ def copy_unpatched_reason(info):
     tb = Fraction(info.get('time_base') or '0/1')
     if not tb or (1/Fraction(info['fps'])/tb).denominator != 1:
         return (f"source time base {info.get('time_base')} cannot hold {info['fps']} fps frame times exactly "
-                '(remux to MP4/MOV first to use --copy-unpatched)')
+                '(run `flow_patch.py regrid` first to use --copy-unpatched)')
     return None
+
+
+def regrid(source, output):
+    """Stream-copy SOURCE into MP4/MOV with every timestamp snapped to n/fps.
+
+    A plain `-c copy` remux keeps Matroska's millisecond rounding (and per-packet durations), so the
+    MP4 is not constant-rate. Each packet time here moves by under a quarter frame to its exact grid
+    slot; frame pixels, frame count, order and audio payload are unchanged, and all are checked."""
+    info = probe(source)
+    require(info['on_frame_grid'], 'Frames are not within a quarter frame of n/fps; this is not '
+            'timestamp rounding, so regrid would retime the video. Normalize explicitly instead')
+    times = decode_pass(source)[0]
+    fps = Fraction(info['fps'])
+    shift = max(abs(t-n/fps) for n, t in enumerate(times))
+    n = fps.numerator
+    timescale = n if n >= 1000 else 90000 if 90000 % n == 0 else n*-(-1000//n)
+    snap = f'*TB*{fps.numerator}/{fps.denominator})'
+    cmd = [FFMPEG, '-v', 'error', '-n', '-copyts', *file_input(source), '-map', '0:v:0', '-map', '0:a?',
+           '-c', 'copy', '-bsf:v', f'setts=pts=round(PTS{snap}:dts=round(DTS{snap}:duration=1'
+           f':time_base={fps.denominator}/{fps.numerator}', '-video_track_timescale', str(timescale),
+           '-movflags', '+faststart', output]
+    run(cmd)
+    out = probe(output, True)
+    require(out['fps'] == info['fps'] and out['frames'] == info['frames'] and out['on_frame_grid'],
+            'Regridded file does not match the source frame rate or frame count')
+    require(decode_pass(output, True)[1] == decode_pass(source)[1], 'Regridded frames differ from the source')
+    if info['audio']:
+        require(audio_hash(output) == audio_hash(source), 'Regridded audio payload differs from the source')
+    dropped = {k: v for k, v in info['streams'].items() if k != 'audio' and v}
+    return {'source': str(Path(source).resolve()), 'output': str(output), 'fps': info['fps'], 'frames': info['frames'],
+            'max_timestamp_shift_ms': round(shift*1000, 3), 'decoded_frames_identical': True,
+            'audio_payload_identical': info['audio'] or None, 'audio_tracks': info['streams']['audio'],
+            'not_carried': dropped, 'copy_unpatched_eligible': copy_unpatched_reason(out) is None,
+            'command_argv': [str(x) for x in cmd]}
 
 
 def keyframe_indices(path, fps, frames):
@@ -1368,7 +1402,7 @@ def utf8_console():
 def main():
     utf8_console()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode',choices=['doctor','inspect','prepare','merge'])
+    parser.add_argument('mode',choices=['doctor','inspect','prepare','merge','regrid'])
     parser.add_argument('--config',type=Path)
     parser.add_argument('--source',type=Path)
     parser.add_argument('--output',type=Path)
@@ -1401,6 +1435,26 @@ def main():
     if args.mode == 'inspect':
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
+    if args.mode == 'regrid':
+        require(args.source is not None and args.output is not None, '--source and --output required')
+        output = output_path(args.output); report = output_path(output.with_suffix('.report.json'))
+        require(output.suffix.lower() in ('.mp4','.mov'), 'regrid output must be MP4/MOV')
+        require(not output.exists() and not report.exists(), 'Output/report exists; choose new name')
+        with tempfile.TemporaryDirectory(prefix='.flow-patch-',dir=output.parent) as tmp:
+            temp = Path(tmp)/output.name
+            result = regrid(args.source, temp)
+            result.update(output=str(output), output_sha256=sha(temp), source_sha256=sha(args.source))
+            with contextlib.ExitStack() as files:
+                dest = files.enter_context(private_output(output, binary=True))
+                rpt = files.enter_context(private_output(report))
+                with temp.open('rb') as src:
+                    shutil.copyfileobj(src, dest)
+                json.dump(result, rpt, ensure_ascii=False, indent=2)
+        if result['not_carried']:
+            print('NOTICE: Not carried to the output: '+', '.join(f'{v} {k}' for k, v in result['not_carried'].items())
+                  +' stream(s)', file=sys.stderr)
+        print(f"PASS: {output} (timestamps moved at most {result['max_timestamp_shift_ms']} ms; frames and "
+              f"audio unchanged)\nReport: {report}"); return
     require(args.config is not None and args.output is not None, '--config and --output required')
     require(args.mode == 'merge' or not (args.frames or args.preview or args.copy_unpatched),
             '--frames/--preview apply to merge only; Flow uploads always use the full prepare encode')
@@ -1461,6 +1515,10 @@ def main():
         count = segment_count(info['frames']) if args.mode == 'merge' and span is None else 1
         if smart is not None:
             plan = plan_used
+            if smart['copied_frames'] == 0:
+                notices.append('--copy-unpatched copied no frames: every source GOP holds a patch frame, '
+                               'so it saved nothing over a full render')
+                print('NOTICE: '+notices[-1], file=sys.stderr)
         elif count > 1:
             plan,cmd = merge_segmented(cfg,info,plan,temp,count,preset)
         else:
