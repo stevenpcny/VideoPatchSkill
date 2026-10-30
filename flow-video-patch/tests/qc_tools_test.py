@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 
+import cv2
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +76,24 @@ class QcTools(unittest.TestCase):
             scores[name] = r['summary']['high_freq_weighted_mean']['mean']
         self.assertLess(scores['same'], .01)
         self.assertGreater(scores['noisy'], 5)
+
+    def test_precheck_calls(self):
+        base = Path(self.tmp.name)
+        zoomed = base/'zoomed.mp4'  # a return that drifted in scale, like an unlocked generation
+        encode(zoomed, [cv2.warpAffine(f, cv2.getRotationMatrix2D((80, 80), 0, 0.92 + 0.004*(i % 5)), (160, 160))
+                        for i, f in enumerate(self.frames)])
+        calls = {}
+        for name, gen in (('same', self.up), ('zoomed', zoomed)):
+            cfg = base/f'pre-{name}.json'
+            cfg.write_text(json.dumps(dict(schema_version=1, source=str(self.up), source_size=[160, 160], fps=24,
+                patches=[dict(generated=str(gen), target=[0, 30], crop=[0, 0, 160, 160], work_size=[160, 160],
+                              matte=dict(region=[50, 30, 60, 60], feather=8))])), encoding='utf-8')
+            r = qc('precheck', '--config', cfg, '--samples', 4)
+            self.assertEqual(r['summary']['frames_sampled'], 4)
+            self.assertIn('blinks and gaze frame by frame', r['manual_checks_remaining'])
+            calls[name] = r['provisional_call']
+        self.assertEqual(calls['same'], 'fits')
+        self.assertNotEqual(calls['zoomed'], 'fits')
 
     def test_sharpness_reports_per_frame(self):
         r = qc('sharpness', '--video', self.up, '--region', 0, 0, 160, 100)

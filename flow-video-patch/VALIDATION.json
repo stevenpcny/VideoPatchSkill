@@ -2,7 +2,8 @@
   "package_version": "2.8",
   "update_scope": [
     "flow_patch.py: one FFmpeg decoding pass per file gives timestamps (demuxer time base), frame count and murmur3 frame hashes; output checks use it in strict (-xerror) mode instead of an ffprobe decode plus a separate -xerror decode; copy-unpatched reuses source hashes from the probe pass and the joined-stream check as the output check",
-    "issue #10: --copy-unpatched waits for background checks before any fallback (WinError 32), refuses up front when the container time base cannot hold frame times (Matroska ms); smoke test_20 covers early and post-join fallback"
+    "issue #10: --copy-unpatched waits for background checks before any fallback (WinError 32), refuses up front when the container time base cannot hold frame times (Matroska ms); smoke test_20 covers early and post-join fallback",
+    "workflow: pre-filled *.visual-review.json and report tools inventory; qc_tools precheck; reading rules trimmed (policy on first use/version change, verification once per task); AGENT_ENTRY condensed; doctor -> --frames --preview -> full export; dry runs share the probe cache; tools/release.py"
   ],
   "processing_scripts": "flow_patch.py changed; outputs byte-identical to v2.7",
   "tool_policy_scope": "Package version only",
@@ -24,9 +25,9 @@
     "linux_local": {
       "platform": "Linux, 4 cores, FFmpeg 6.1.1",
       "per_kernel_mode": {
-        "smoke_test": "20/20",
+        "smoke_test": "21/21",
         "security_test": "16/16",
-        "qc_tools_test": "5/5",
+        "qc_tools_test": "6/6",
         "color_pipeline_test": "9/9",
         "remote_run_test": "4/4",
         "ffmpeg_regression": "6/6"

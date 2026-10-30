@@ -63,9 +63,12 @@ python scripts/fit_patch.py --config "merge.json" --patch 0 --output "merge-prop
 - 大幅遮挡、人物交叉、头发超出裁切：重新裁切、逐帧细遮罩如需另用跟踪/合成工具，先停止该步骤，完成白名单扩展核查并获用户明确批准；本包基础几何不解决所有遮挡。
 
 ```bash
-python scripts/flow_patch.py merge --config "merge-proposed.json" --output "patched.mp4" --dry-run
+python scripts/qc_tools.py precheck --config "merge-proposed.json" --patch 0
+python scripts/flow_patch.py merge --config "merge-proposed.json" --output "check.mp4" --frames 40:80 --preview
 python scripts/flow_patch.py merge --config "merge-proposed.json" --output "patched.mp4"
 ```
+
+检查用导出已经会校验配置并探测素材，不需要先单独跑 `--dry-run`（需要只看计划时仍可用，它与检查用导出共用探测缓存）。
 
 先用 `merge --frames START:END --preview` 导出关键区间确认位置与融合（帧号沿用原配置，无需裁源片或重编号；见[参数与命令](parameters.md)），再按最终参数从原始尺寸完整合成。检查用导出不能交付或代替最终文件的视觉验收。不要把1080p预览放大成8K交付。多人从原片一次合成，避免修一次就重压一次。版本迭代仍从原片和原始返回重新导出，尽量合并处理后只做一次最终有损编码。独立补丁须记录是否已去黑边、是否已缩到贴回尺寸。
 

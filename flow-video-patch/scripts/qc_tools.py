@@ -7,6 +7,8 @@
   sharpness  Laplacian variance of a (tracked) region, optionally resized to final scale
   slit       time-slice image of one column band along a track, for reading landmarks over time
   seam       transition-band mismatch of one merge patch (w=4a(1-a)), before or between candidates
+  precheck   return fit pre-check before merging: file, spec, mapping, geometry, residual motion,
+             colour, canvas holes and seam, with a provisional "fits / hard / regenerate" call
 
 All frame indices are zero-based. Rectangles are x,y,w,h in the measured video's pixels.
 Results are evidence for a human decision, not proof of identity, lip sync or a seamless merge.
@@ -178,6 +180,97 @@ def cmd_seam(a):
             'note': 'Compare candidates of the same shot; lower is a less visible seam. Not visual acceptance.'}
 
 
+def cmd_precheck(a):
+    """references/return-fit-assessment.md section 1 as numbers; people still judge blinks, expression,
+    identity and performance. Geometry uses everything outside the (dilated) patch matte."""
+    cfg = fp.load(Path(a.config).resolve()); info = fp.validate_source(cfg)
+    fp.require(0 <= a.patch < len(cfg.get('patches', [])), 'Patch index out of range')
+    fp.require(a.samples >= 2, 'Need at least two sample frames')
+    p = cfg['patches'][a.patch]; gi = fp.probe(p['generated'])
+    plan = fp.merge_plan(dict(cfg, patches=[p]), info)[0]; indices = plan['indices']
+    valid = [(k, j) for k, j in enumerate(indices) if j is not None]
+    fp.require(valid, 'No mapped frames to check')
+    ws = tuple(p['work_size']); first = p['target'][0]
+    picks = sorted({valid[round(i*(len(valid)-1)/(a.samples-1))] for i in range(a.samples)})
+    grid = lambda i: i['fps'] if i.get('on_frame_grid') else None
+    src = fp.Reader(cfg['source'], info['size'], info['color'], first+picks[0][0], grid(info))
+    gen = fp.Reader(p['generated'], gi['size'], gi['color'], picks[0][1], grid(gi))
+    rows = []
+    try:
+        for k, j in picks:
+            i = first+k
+            x, y, w, h = fp.rectangle(p['crop'], i, info['size'])
+            original = cv2.resize(src.region(i, (x, y, w, h)), ws, interpolation=cv2.INTER_LANCZOS4)
+            patch = cv2.resize(gen.get(j), ws, interpolation=cv2.INTER_LANCZOS4)
+            m = fp.matte(p['matte'], i, ws)
+            outside = cv2.dilate((m > 0).astype(np.uint8), np.ones((15, 15), np.uint8)) == 0
+            for box in p.get('fit_exclude', []):
+                bx, by, bw, bh = fp.rectangle(box, i, ws); outside[by:by+bh, bx:bx+bw] = False
+            ga, gb = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY), cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+            row = {'frame': i, 'generated_frame': j}
+            try:
+                corr, warp = cv2.findTransformECC(ga, gb, np.eye(2, 3, dtype=np.float32), cv2.MOTION_AFFINE,
+                                                  (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 100, 1e-5),
+                                                  outside.astype(np.uint8)*255, 5)
+            except cv2.error:
+                rows.append(dict(row, correlation=None)); continue
+            aligned = cv2.warpAffine(patch, warp, ws, flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
+            inside = cv2.warpAffine(np.ones(ws[::-1], np.uint8), warp, ws,
+                                    flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP) > 0
+            flow = cv2.calcOpticalFlowFarneback(ga, cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY), None,
+                                                0.5, 3, 21, 3, 5, 1.1, 0)
+            texture = np.abs(cv2.Laplacian(ga, cv2.CV_32F)) > 8  # flat backgrounds give no motion evidence
+            use = outside & inside & texture
+            motion = np.hypot(flow[..., 0], flow[..., 1])[use]
+            diff = (aligned.astype(np.float32)-original.astype(np.float32))[outside & inside]
+            row.update(correlation=float(corr), scale=float(np.sqrt(abs(np.linalg.det(warp[:, :2])))),
+                       shift=[float(warp[0, 2]), float(warp[1, 2])],
+                       residual_motion_median=float(np.median(motion)) if motion.size else None,
+                       residual_motion_p90=float(np.percentile(motion, 90)) if motion.size else None,
+                       colour_offset_bgr=[float(v) for v in np.median(diff, 0)] if diff.size else None,
+                       canvas_holes_in_patch=int(((m > 0) & ~inside).sum()))
+            rows.append(row)
+    finally:
+        src.close(); gen.close()
+    ok = [r for r in rows if r.get('correlation') is not None]
+    seam = cmd_seam(argparse.Namespace(config=a.config, patch=a.patch, step=max(1, len(indices)//a.samples),
+                                       sigma=3, threshold=12))['summary']
+    mapped = [j for j in indices if j is not None]
+    summary = {
+        'generated_sha256': fp.sha(p['generated']),
+        'spec': {'generated_size': gi['size'], 'generated_frames': gi['frames'], 'fps': gi['fps'],
+                 'target_frames': len(indices), 'mapped_frames': len(mapped),
+                 'repeated_frames': len(mapped)-len(set(mapped)), 'kept_original_frames': indices.count(None)},
+        'frames_sampled': len(rows), 'registration_failed': len(rows)-len(ok)}
+    if ok:
+        scales = [r['scale'] for r in ok]; shifts = [r['shift'] for r in ok]
+        p90 = [r['residual_motion_p90'] for r in ok if r['residual_motion_p90'] is not None]
+        summary.update(correlation_min=min(r['correlation'] for r in ok), scale_range=[min(scales), max(scales)],
+                       shift_range_px=[float(np.ptp([s[0] for s in shifts])), float(np.ptp([s[1] for s in shifts]))],
+                       residual_motion_p90_max=max(p90) if p90 else None,
+                       colour_offset_bgr_median=[float(v) for v in np.median([r['colour_offset_bgr'] for r in ok
+                                                                             if r['colour_offset_bgr']], 0)],
+                       canvas_holes_max=max(r['canvas_holes_in_patch'] for r in ok))
+    # Provisional call from the magnitudes in return-fit-assessment.md; a person confirms it.
+    if len(ok) < len(rows) or not ok:
+        call = 'regenerate'
+    else:
+        drift = max(abs(summary['scale_range'][0]-1), abs(summary['scale_range'][1]-1))
+        motion = summary['residual_motion_p90_max'] or 0
+        if summary['correlation_min'] >= .97 and drift <= .01 and max(summary['shift_range_px']) <= 2 and motion <= 2 \
+                and summary['canvas_holes_max'] == 0:
+            call = 'fits'
+        elif summary['correlation_min'] >= .9 and drift <= .03 and motion <= 5:
+            call = 'hard'
+        else:
+            call = 'regenerate'
+    return {'patch': a.patch, 'provisional_call': call, 'summary': summary, 'seam': seam, 'samples': rows,
+            'manual_checks_remaining': ['blinks and gaze frame by frame', 'expression and mouth/lip sync',
+                                        'identity and accessories', 'mic/hand and face residuals by region',
+                                        'time mapping against the upload (qc_tools offset)'],
+            'note': 'Evidence for a decision, not visual acceptance; thresholds are orders of magnitude.'}
+
+
 def main():
     fp.utf8_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -204,6 +297,8 @@ def main():
     s.add_argument('--patch', type=int, default=0); s.add_argument('--step', type=int, default=1)
     s.add_argument('--sigma', type=float, default=3, help='Gaussian low-pass sigma in work pixels')
     s.add_argument('--threshold', type=float, default=12, help='high-frequency difference counted as large')
+    s = sub.add_parser('precheck'); s.add_argument('--config', required=True)
+    s.add_argument('--patch', type=int, default=0); s.add_argument('--samples', type=int, default=8)
     a = ap.parse_args()
     print(json.dumps(globals()['cmd_' + a.cmd](a), ensure_ascii=False))
 

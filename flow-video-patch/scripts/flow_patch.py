@@ -9,6 +9,8 @@ import bisect
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 import contextlib
 import ctypes
+import functools
+import importlib.metadata
 from fractions import Fraction
 import hashlib
 import json
@@ -1290,6 +1292,72 @@ def verify(source, output, expected, copy_audio):
     return {'decode_pass':True, 'output':result, 'audio_payload_sha256':ah}
 
 
+@functools.lru_cache(maxsize=None)
+def tool_version(tool):
+    return run([tool, '-version']).decode().splitlines()[0]
+
+
+def opencv_distribution():
+    for name in ('opencv-python', 'opencv-python-headless', 'opencv-contrib-python', 'opencv-contrib-python-headless'):
+        with contextlib.suppress(importlib.metadata.PackageNotFoundError):
+            return f'{name} {importlib.metadata.version(name)}'
+    return 'unknown distribution'
+
+
+def tool_inventory():
+    """Tools this run actually uses, for the delivery list SKILL.md asks for. Licence terms are in
+    THIRD_PARTY_NOTICES.md; optional components are those recorded in TOOL_POLICY.json."""
+    notices = 'THIRD_PARTY_NOTICES.md'
+    encoder_name = video_encoder()
+    items = [{'tool': 'CPython', 'version': sys.version.split()[0], 'allowlist': 'default', 'license_reference': notices},
+             {'tool': 'NumPy', 'version': np.__version__, 'allowlist': 'default', 'license_reference': notices},
+             {'tool': 'OpenCV', 'version': f'cv2 {cv2.__version__} ({opencv_distribution()})', 'allowlist': 'default',
+              'license_reference': notices},
+             {'tool': 'FFmpeg', 'version': tool_version(FFMPEG), 'allowlist': 'default', 'license_reference': notices},
+             {'tool': 'ffprobe', 'version': tool_version(FFPROBE), 'allowlist': 'default', 'license_reference': notices},
+             {'tool': 'video encoder', 'version': encoder_name, 'license_reference': notices,
+              'allowlist': 'default' if encoder_name == 'libx264' else 'optional: ffmpeg_hardware_h264 (TOOL_POLICY.json)'}]
+    if kernels():
+        items.append({'tool': 'flow_kernels (native/)', 'version': f'ABI {NativeKernels.ABI}, built locally',
+                      'allowlist': 'optional: flow_kernels_native (TOOL_POLICY.json)', 'license_reference': notices})
+    return items
+
+
+def prefilled_review(result, cfg, output, report):
+    """Visual review record with only the fields the run itself establishes; every visual check that
+    needs a person stays not_run and the overall status stays pending_visual_review."""
+    record = json.loads((Path(__file__).resolve().parents[1]/'assets'/'visual-review-template.json')
+                        .read_text(encoding='utf-8'))
+    out = result['output']
+    record.update(source=Path(cfg['source']).name, output=output.name, output_sha256=result['output_sha256'],
+                  fps=out['fps'], output_frames=out['frames'], technical_report=report.name,
+                  repair_source_intervals_half_open=[p['target'] for p in cfg['patches']])
+    record['technical_validation'] = {'status': 'pass', 'evidence': [
+        f'{report.name}: strict full decode, size/fps/frame count'
+        + (', original audio payload SHA-256' if result.get('audio_payload_sha256') else '')]}
+    declared = []
+    for p in cfg['patches']:
+        indices = mapping(p, p['target'][1])
+        valid = [j for j in indices if j is not None]
+        declared.append({'target': p['target'], 'generated': Path(p['generated']).name,
+                        'generated_range': [min(valid), max(valid)] if valid else None,
+                        'repeated_frames': len(valid)-len(set(valid)), 'kept_original_frames': indices.count(None)})
+    record['frame_mapping_evidence'] = {'kind': 'declared in the configuration (not proof of alignment)',
+                                        'patches': declared}
+    for check in record['visual_checks']:
+        if check['id'] == 'decode_dimensions_fps_frames':
+            check.update(status='pass', evidence=[report.name], notes='Automatic: strict decode, size, fps and frames')
+        elif check['id'] == 'original_audio_payload':
+            if result.get('audio_payload_sha256'):
+                check.update(status='pass', evidence=[report.name],
+                             notes='Automatic: copied audio payload SHA-256 equals the source')
+            elif not out.get('audio'):
+                check.update(status='not_applicable', notes='Source has no audio stream')
+    record['prefilled'] = {'by': 'flow_patch.py merge', 'note': 'Only automatic fields are filled; '
+                           'all other checks remain not_run until a person reviews the final file.'}
+    return record
+
+
 def utf8_console():
     """Chinese paths and messages print the same on every platform, without PYTHONUTF8."""
     for stream in (sys.stdout, sys.stderr):
@@ -1319,8 +1387,8 @@ def main():
         require('libx264' in encoders, 'FFmpeg needs libx264 encoder')
         print(json.dumps({'security_notice':'Capability check only. Verify patched runtime versions per SECURITY.md before using untrusted media.',
                           'python':sys.version,'opencv':cv2.__version__, 'numpy':np.__version__,
-                          'ffmpeg':run([FFMPEG,'-version']).decode().splitlines()[0],
-                          'ffprobe':run([FFPROBE,'-version']).decode().splitlines()[0],
+                          'ffmpeg':tool_version(FFMPEG),'ffprobe':tool_version(FFPROBE),
+                          'opencv_distribution':opencv_distribution(),
                           'libx264':True,'encode_threads':encode_threads(),
                           'crf_preset':list(x264_settings()),
                           'video_encoder':video_encoder(),
@@ -1349,8 +1417,8 @@ def main():
             f'{video_encoder()} for a deliverable or Flow upload needs FLOW_HW_DELIVERABLE=1 after '
             'comparing its quality with libx264; see references/remote-worker.md')
     cfg = load(args.config.resolve())
-    # Deliverable runs always re-probe in full; check runs may reuse probes of unchanged inputs.
-    cache = None if deliverable else output_path(args.output).parent/'.flow-probe-cache'
+    # Deliverable runs always re-probe in full; check runs and dry runs may reuse probes of unchanged inputs.
+    cache = None if deliverable and not args.dry_run else output_path(args.output).parent/'.flow-probe-cache'
     prefetch_probes([cfg['source'], *(p['generated'] for p in cfg.get('patches', []))], cache)
     info = validate_source(cfg)
     plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info)
@@ -1368,7 +1436,10 @@ def main():
                          ensure_ascii=False,indent=2)); return
     output = output_path(args.output); report = output_path(output.with_suffix('.report.json'))
     require(output.suffix.lower() in ('.mp4','.mov','.mkv'), 'Output must be MP4/MOV/MKV')
-    require(not output.exists() and not report.exists(), 'Output/report exists; choose new name')
+    # Deliverable merges also get a pre-filled visual review record next to the report.
+    review = output_path(output.with_suffix('.visual-review.json')) if args.mode == 'merge' and deliverable else None
+    require(not output.exists() and not report.exists() and not (review and review.exists()),
+            'Output/report/review record exists; choose new name')
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.flow-patch-',dir=output.parent) as tmp:
         temp = Path(tmp)/output.name
@@ -1411,12 +1482,19 @@ def main():
         if args.copy_unpatched:
             result['copy_unpatched'] = smart or {'used': False}
         result['generated_sha256'] = {p['generated']:sha(p['generated']) for p in cfg.get('patches',[])}
-        # Reserve both paths exclusively; remove only files created here on failure.
-        with private_output(output, binary=True) as dest, private_output(report) as rpt:
+        result['tools'] = tool_inventory()
+        # Reserve every path exclusively; remove only files created here on failure.
+        with contextlib.ExitStack() as files:
+            dest = files.enter_context(private_output(output, binary=True))
+            rpt = files.enter_context(private_output(report))
             with temp.open('rb') as src:
                 shutil.copyfileobj(src, dest)
             json.dump(result, rpt, ensure_ascii=False, indent=2)
-    print(f'PASS{"" if deliverable else " (check only, not deliverable)"}: {output}\nReport: {report}')
+            if review is not None:
+                json.dump(prefilled_review(result, cfg, output, report),
+                          files.enter_context(private_output(review)), ensure_ascii=False, indent=2)
+    print(f'PASS{"" if deliverable else " (check only, not deliverable)"}: {output}\nReport: {report}'
+          + (f'\nVisual review record (pre-filled, pending): {review}' if review is not None else ''))
 
 
 if __name__ == '__main__':

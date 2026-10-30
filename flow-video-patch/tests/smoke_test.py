@@ -410,6 +410,29 @@ class Smoke(unittest.TestCase):
                          {'used':False})
         self.assertFalse(any(self.base.glob('.flow-patch-*')),'temporary folder left behind')
 
+    def test_21_prefilled_review_and_tools(self):
+        cfg=self.config('review',patches=[self.patch()]);out=self.base/'review.mp4'
+        p=cli('merge','--config',cfg,'--output',out)
+        review=out.with_suffix('.visual-review.json')
+        self.assertIn('Visual review record',p.stdout)
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
+        rec=json.loads(review.read_text(encoding='utf-8'))
+        self.assertEqual((rec['output_sha256'],rec['output_frames'],rec['output']),(rpt['output_sha256'],24,'review.mp4'))
+        self.assertEqual(rec['overall_visual_status'],'pending_visual_review')
+        status={c['id']:c['status'] for c in rec['visual_checks']}
+        self.assertEqual((status['decode_dimensions_fps_frames'],status['original_audio_payload']),('pass','pass'))
+        self.assertEqual({s for k,s in status.items() if k not in ('decode_dimensions_fps_frames','original_audio_payload')},
+                         {'not_run'})
+        self.assertEqual(rec['frame_mapping_evidence']['patches'][0]['repeated_frames'],1)  # tail hold
+        tools={t['tool']:t for t in rpt['tools']}
+        self.assertTrue({'CPython','NumPy','OpenCV','FFmpeg','ffprobe','video encoder'} <= set(tools))
+        self.assertEqual(tools['video encoder']['version'],'libx264')
+        # Check-only exports get no review record; an existing record blocks a new output of that name.
+        cli('merge','--config',cfg,'--output',self.base/'review-check.mp4','--preview')
+        self.assertFalse((self.base/'review-check.visual-review.json').exists())
+        out.unlink(); out.with_suffix('.report.json').unlink()
+        self.assertIn('exists',cli('merge','--config',cfg,'--output',out,ok=False).stderr)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
