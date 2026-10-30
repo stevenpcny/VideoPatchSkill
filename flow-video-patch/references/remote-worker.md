@@ -42,13 +42,13 @@
 5. **编译型内核**：色彩转换、色度均值、融合用 C++／Rust 实现，须新增并核查编译工具链与分发方式，并与现有精确换算逐值一致。
 6. **硬件编码（QSV 等）**：先只用于不交付的预览和 QC 素材；用于成片前须核查驱动与构建、比较画质与码率、重跑色彩回归。
 7. **远程执行脚本化**：把"传素材→比对哈希→运行→取回→再比对"写成随包脚本，减少人工命令与路径错误；只允许连接本地档案指定的主机。
-8. **Windows 兼容**：脚本内部统一按 UTF-8 输出，不依赖 `PYTHONUTF8`；文件占用替换测试在 Windows 上改为跳过并注明原因。
+8. ~~Windows 兼容~~：已做（v2.5 脚本自行 UTF-8 输出；文件占用替换测试在 Windows 上跳过并注明原因）。
 9. **预读深度可配置**：高分辨率多补丁时控制内存，低内存机器可减小预读帧数。
 10. **实片计时基线**：用真实任务记录各阶段耗时，作为后续优化取舍依据；合成测试数字不代表实片。
 
 ## Windows 工作机注意
 
-- 设置 `PYTHONUTF8=1`，否则中文输出会报 cp1252 `charmap` 错误。
-- `security_test` 中 `test_replacement_file_survives_failure_cleanup` 在 Windows 报 WinError 32：该测试改名仍打开的文件，Windows 本就禁止，所模拟的竞态在该平台不会发生。其他测试失败按真实问题处理。
+- v2.5 起不需要 `PYTHONUTF8=1`；v2.4 及更早版本仍须设置，否则中文输出会报 cp1252 `charmap` 错误。
+- `security_test` 中 `test_replacement_file_survives_failure_cleanup` 在 Windows 上跳过（v2.4 及更早报 WinError 32）：该测试改名仍打开的文件，Windows 本就禁止，所模拟的竞态在该平台不会发生。其他测试失败按真实问题处理。
 - 通过 SSH 跑 cmd 命令时注意引号；Git Bash 的 `sh.exe` 可运行 `tests/ffmpeg_regression.sh`。
 - 微软 OpenSSH MSI 若在"重新配置"时报 1603 且日志为 `SetPrivilegesOnSshd`／`0x80070424`，是 sshd 服务注册丢失：用 `New-Service` 注册并执行 `sc.exe privs`（与官方 install-sshd.ps1 相同），或先卸载再全新安装。

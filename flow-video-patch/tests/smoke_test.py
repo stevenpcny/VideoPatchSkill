@@ -18,7 +18,7 @@ import flow_patch as fp
 
 def cli(*args, ok=True):
     p = subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),*map(str,args)],
-                       stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                       stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
     if ok and p.returncode:
         raise AssertionError(p.stdout+p.stderr)
     if not ok and not p.returncode:
@@ -97,7 +97,7 @@ class Smoke(unittest.TestCase):
         cli('prepare','--config',cfg,'--output',out,'--dry-run')
         self.assertFalse(out.exists())
         cli('prepare','--config',cfg,'--output',out)
-        rpt=json.loads(out.with_suffix('.report.json').read_text())
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
         self.assertEqual(rpt['output']['frames'],20)
         self.assertEqual(rpt['output']['core_in_upload'],[2,18])
         self.assertLess(image(out,5)[30:55,30:50].mean(),8)
@@ -151,9 +151,9 @@ class Smoke(unittest.TestCase):
                      matte=dict(region=[24,24,48,48],feather=6),blend='alpha')
         cfg=self.config('fit',patches=[p]);out=self.base/'fit-proposed.json'
         result=subprocess.run([sys.executable,str(ROOT/'scripts/fit_patch.py'),'--config',str(cfg),
-                               '--output',str(out)],capture_output=True,text=True)
+                               '--output',str(out)],capture_output=True,text=True,encoding='utf-8')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        proposed=json.loads(out.read_text())
+        proposed=json.loads(out.read_text(encoding='utf-8'))
         self.assertTrue(all(r['accepted'] for r in proposed['fit_review']['registration']))
         for row in proposed['patches'][0]['source_to_generated_affine']:
             self.assertLess(abs(row['value'][2]-2),.6)
@@ -168,7 +168,7 @@ class Smoke(unittest.TestCase):
                                      output_size=[96,128],mask_regions=[[24,24,32,40]]))
         out=self.base/'no-audio-upload.mp4'
         cli('prepare','--config',cfg,'--output',out)
-        rpt=json.loads(out.with_suffix('.report.json').read_text())
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
         self.assertEqual(rpt['output']['frames'],23)
         self.assertEqual(rpt['output']['core_in_upload'],[0,10])
         self.assertFalse(rpt['output']['audio'])
@@ -202,9 +202,9 @@ class Smoke(unittest.TestCase):
         cli('merge','--config',cfg,'--output',single)
         p=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),
                           '--output',str(split)],env=dict(os.environ,FLOW_SEGMENTS='2'),
-                         stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                         stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf-8')
         self.assertEqual(p.returncode,0,p.stderr)
-        rpt=json.loads(split.with_suffix('.report.json').read_text())
+        rpt=json.loads(split.with_suffix('.report.json').read_text(encoding='utf-8'))
         self.assertEqual([s['frames'] for s in rpt['command_argv']['segments']],[[0,12],[12,24]])
         self.assertEqual(fp.probe(split)['frames'],24)
         self.assertEqual(fp.audio_hash(self.source),fp.audio_hash(split))
@@ -226,7 +226,7 @@ class Smoke(unittest.TestCase):
         cli('merge','--config',cfg,'--output',full)
         out=cli('merge','--config',cfg,'--output',part,'--frames','6:18','--preview').stdout
         self.assertIn('not deliverable',out)
-        rpt=json.loads(part.with_suffix('.report.json').read_text())
+        rpt=json.loads(part.with_suffix('.report.json').read_text(encoding='utf-8'))
         self.assertEqual(rpt['scope'],{'frames':[6,18],'preview_encode':True,'deliverable':False})
         self.assertTrue(rpt['visual_review'].startswith('not deliverable'))
         self.assertIn('ultrafast',rpt['command_argv'])
@@ -274,6 +274,57 @@ class Smoke(unittest.TestCase):
         self.assertEqual(fp.cached_probe(path,cache)['frames'],999)  # same stat: cache is used
         os.utime(clip,ns=(1,1))  # a changed file gets a fresh, full probe
         self.assertEqual(fp.cached_probe(path,cache),first)
+
+    def test_14_fit_affine_scale(self):
+        original=[image(self.source,i)[:,:96].copy() for i in range(24)]
+        known=np.array([[1.04,0,-1.0],[0,1.04,-2.0]],np.float32)
+        gen=[cv2.warpAffine(im,known,(96,128)) for im in original]
+        gp=self.base/'fit-scale.mp4';encode(gp,gen)
+        p=self.patch(generated=str(gp),frame_map=list(range(24)),
+                     matte=dict(region=[30,30,36,48],feather=6),blend='alpha')
+        cfg=self.config('fit-scale',patches=[p]);out=self.base/'fit-scale-proposed.json'
+        run=lambda *extra:subprocess.run([sys.executable,str(ROOT/'scripts/fit_patch.py'),'--config',str(cfg),
+                                          '--output',str(out),*extra],capture_output=True,text=True,encoding='utf-8')
+        result=run('--motion','affine')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        proposed=json.loads(out.read_text(encoding='utf-8'))
+        self.assertEqual(proposed['fit_review']['motion'],'affine')
+        for row in proposed['patches'][0]['source_to_generated_affine']:
+            np.testing.assert_allclose(row['value'],known.flatten(),atol=.6)
+            self.assertLess(abs(row['value'][0]-1.04),.01); self.assertLess(abs(row['value'][4]-1.04),.01)
+        out.unlink()
+        # The scale exceeds a tighter bound, so no proposal is written.
+        self.assertNotEqual(run('--motion','affine','--max-linear-change','0.01').returncode,0)
+        self.assertFalse(out.exists())
+
+    def test_15_one_sided_fade(self):
+        cfg=self.config('fade-in',patches=[self.patch(fade_in_frames=6,protect=None)]);out=self.base/'fade-in.mp4'
+        cli('merge','--config',cfg,'--output',out)
+        src,res=fp.Reader(self.source,[192,128]),fp.Reader(out,[192,128])
+        try:
+            diff=lambda i:np.mean(abs(res.get(i)[30:60,30:65].astype(float)-src.get(i)[30:60,30:65]))
+            self.assertLess(diff(0),6)       # weight 0 on the first frame: coding noise only
+            self.assertGreater(diff(12),20)  # full weight after the fade-in
+            self.assertGreater(diff(23),20)  # no fade-out at the end
+        finally:
+            src.close(); res.close()
+        bad=self.config('fade-bad',patches=[self.patch(fade_in_frames=20,fade_out_frames=10)])
+        self.assertIn('fade',cli('merge','--config',bad,'--output',self.base/'fade-bad.mp4',ok=False).stderr)
+
+    def test_16_notices_and_millisecond_mkv(self):
+        src=self.base/'422-two-tracks.mkv'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=96x64:r=30:d=1',
+                '-f','lavfi','-i','sine=d=1','-f','lavfi','-i','sine=f=880:d=1',
+                '-map','0','-map','1','-map','2','-c:v','libx264','-pix_fmt','yuv422p','-c:a','flac',src])
+        info=fp.probe(src)  # Matroska stores 1 ms ticks: steps alternate 33/34 ms at 30 fps.
+        self.assertEqual((info['fps'],info['frames'],info['chroma'],info['streams']['audio']),('30',30,'4:2:2',2))
+        self.assertTrue(info['on_frame_grid'])
+        cfg=self.config('notices',source=str(src),source_size=[96,64],fps=30,
+                        prepare=dict(core=[5,20],crop=[0,0,96,64],output_size=[96,64],mask_regions=[[8,8,16,16]]))
+        p=cli('prepare','--config',cfg,'--output',self.base/'n.mp4','--dry-run')
+        notices=json.loads(p.stdout)['notices']
+        self.assertTrue(any('4:2:2' in n for n in notices) and any('2 audio tracks' in n for n in notices))
+        self.assertIn('NOTICE:',p.stderr)
 
 
 if __name__=='__main__':

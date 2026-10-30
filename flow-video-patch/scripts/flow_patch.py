@@ -16,6 +16,7 @@ from pathlib import Path
 import queue
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 
@@ -295,7 +296,10 @@ def _probe(path):
     s['nb_read_frames'] = decoded['streams'][0]['nb_read_frames']
     times = [float(f['best_effort_timestamp_time']) for f in decoded['frames']]
     require(len(times) > 0, 'No decoded frames')
-    require(all(abs((b-a)-float(1/fps)) < max(0.0001, float(1/fps)*0.002)
+    # A coarse time base (e.g. MKV milliseconds) rounds each step by up to one tick.
+    tick = float(Fraction(s.get('time_base', '0/1'))) if s.get('time_base') else 0.0
+    step_tolerance = max(0.0001, float(1/fps)*0.002, tick*1.01)
+    require(all(abs((b-a)-float(1/fps)) <= step_tolerance
                 for a, b in zip(times, times[1:])), 'VFR or timestamp gaps; normalize explicitly')
     require(abs(times[0]) < 0.001, 'Video must start near timestamp zero; remux explicitly')
     audio = next((a for a in data['streams'] if a['codec_type'] == 'audio'), None)
@@ -304,8 +308,29 @@ def _probe(path):
     require(len(times) == int(s['nb_read_frames']), 'Frame count mismatch')
     # Frame n at n/fps (within a quarter frame) lets readers seek straight to a frame.
     grid = all(abs(t-n/fps) < 0.25/fps for n, t in enumerate(times))
+    counts = {kind: sum(x['codec_type'] == kind for x in data['streams'])
+              for kind in ('audio', 'subtitle', 'data', 'attachment')}
+    chroma = {'yuv420p': '4:2:0', 'yuvj420p': '4:2:0', 'yuv422p': '4:2:2', 'yuvj422p': '4:2:2',
+              'yuv444p': '4:4:4', 'yuvj444p': '4:4:4'}.get(s['pix_fmt'], 'rgb')
     return {'size': [s['width'], s['height']], 'fps': str(fps), 'frames': len(times),
-            'audio': audio is not None, 'color': color_info(s), 'on_frame_grid': grid}
+            'audio': audio is not None, 'color': color_info(s), 'on_frame_grid': grid,
+            'chroma': chroma, 'streams': counts}
+
+
+def output_notices(info, mode):
+    """What the output cannot carry from this source; reported, never silently dropped."""
+    notes = []
+    if info['chroma'] != '4:2:0':
+        notes.append(f"Source chroma is {info['chroma']}; the H.264 output is 4:2:0, so colour "
+                     'detail is subsampled everywhere, not only in patches')
+    streams = info['streams']
+    if streams['audio'] > 1:
+        notes.append(f"Source has {streams['audio']} audio tracks; only the first is "
+                     + ('copied' if mode == 'merge' else 're-encoded'))
+    dropped = [f'{n} {k}' for k, n in streams.items() if k != 'audio' and n]
+    if dropped:
+        notes.append('Not carried to the output: '+', '.join(dropped)+' stream(s)')
+    return notes
 
 
 def sha(path):
@@ -569,6 +594,12 @@ def validate_source(cfg):
     return info
 
 
+def fades(p):
+    """Temporal fade lengths; fade_frames sets both ends, fade_in/out_frames override one end."""
+    both = p.get('fade_frames', 0)
+    return p.get('fade_in_frames', both), p.get('fade_out_frames', both)
+
+
 def mapping(p, count):
     start, end = p['target']
     require(isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= count,
@@ -626,8 +657,11 @@ def merge_plan(cfg, info):
                 and np.isfinite(offset).all() and (gain > 0).all(), 'Invalid fixed color transform')
         require(p.get('blend', 'alpha') != 'multiband' or not p['matte'].get('protect'),
                 'Use alpha blending for protected mouth regions; multiband can mix low frequencies')
-        fade = p.get('fade_frames', 0)
-        require(isinstance(fade, int) and 0 <= fade <= len(indices)//2, 'Invalid fade_frames')
+        fade_in, fade_out = fades(p)
+        require(all(type(v) is int and v >= 0 for v in (fade_in, fade_out)) and
+                fade_in+fade_out <= len(indices), 'Invalid fade_frames/fade_in_frames/fade_out_frames')
+        if 'fade_frames' in p and not ({'fade_in_frames', 'fade_out_frames'} & set(p)):
+            require(fade_in <= len(indices)//2, 'Invalid fade_frames')
         affine_spec = p.get('source_to_generated_affine', [1,0,0,0,1,0])
         static = static_matte(p['matte']) and not keyframed(affine_spec)
         for i in range(*p['target']):
@@ -665,6 +699,19 @@ def encode_threads():
     return value
 
 
+X264_PRESETS = ('ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow',
+                'slower', 'veryslow')
+
+
+def x264_settings():
+    """Deliverable libx264 quality: FLOW_CRF (0-51, default 17), FLOW_X264_PRESET (default fast)."""
+    crf = os.environ.get('FLOW_CRF', '17')
+    require(crf.isdigit() and int(crf) <= 51, 'FLOW_CRF must be an integer 0 to 51')
+    preset = os.environ.get('FLOW_X264_PRESET', 'fast')
+    require(preset in X264_PRESETS, 'FLOW_X264_PRESET must be one of '+', '.join(X264_PRESETS))
+    return crf, preset
+
+
 def segment_count(frames):
     # Opt-in: 1 (default) keeps the single-encoder bitstream; segments shorter than 12 frames are merged.
     value = os.environ.get('FLOW_SEGMENTS', '1')
@@ -673,7 +720,7 @@ def segment_count(frames):
     return max(1, min(int(value), frames//12))
 
 
-def encoder(path, size, fps, source, color, audio_filter=None, audio=True, preset='fast'):
+def encoder(path, size, fps, source, color, audio_filter=None, audio=True, preset=None):
     require(size[0] % 2 == 0 and size[1] % 2 == 0, 'Output dimensions must be even for yuv420p')
     # Frames arrive as yuv420p already converted with the source matrix; tag via bitstream
     # metadata, because output-side -colorspace flags make FFmpeg insert a lossy conversion.
@@ -686,12 +733,33 @@ def encoder(path, size, fps, source, color, audio_filter=None, audio=True, prese
            *(file_input(source) if audio else []),
            '-map', '0:v:0', *(['-map', '1:a:0?'] if audio else ['-an']),
            '-c:v', 'libx264', '-threads', encode_threads(),
-           '-crf', '17', '-preset', preset, '-pix_fmt', 'yuv420p', '-bsf:v', tags]
+           '-crf', x264_settings()[0], '-preset', preset or x264_settings()[1], '-pix_fmt', 'yuv420p', '-bsf:v', tags]
     if audio and audio_filter is None:
         cmd += ['-c:a', 'copy']
     elif audio:
         cmd += ['-af', audio_filter, '-c:a', 'aac', '-b:a', '192k']
     return cmd+['-movflags', '+faststart', str(path)]
+
+
+def patch_inputs(p, i, roi, generated, count):
+    """Work-size original, aligned colour-fixed patch and faded matte for source frame i,
+    exactly as merge blends them (qc_tools seam measures the same layers)."""
+    ws = tuple(p['work_size'])
+    original = cv2.resize(roi, ws, interpolation=cv2.INTER_LANCZOS4)
+    patch = cv2.resize(generated, ws, interpolation=cv2.INTER_LANCZOS4)
+    affine = curve(p.get('source_to_generated_affine',[1,0,0,0,1,0]),i).reshape(2,3)
+    patch = cv2.warpAffine(patch,affine,ws,
+                           flags=cv2.INTER_LINEAR|cv2.WARP_INVERSE_MAP,
+                           borderMode=cv2.BORDER_CONSTANT)
+    gain, offset = p.get('gain_bgr',[1,1,1]), p.get('offset_bgr',[0,0,0])
+    if list(gain) != [1,1,1] or list(offset) != [0,0,0]:  # identity is a no-op
+        patch = np.clip(patch.astype(float)*gain+offset,0,255).round().astype(np.uint8)
+    m = matte(p['matte'],i,ws)
+    fade_in, fade_out = fades(p)
+    if fade_in or fade_out:
+        k = i-p['target'][0]
+        m *= min(1, k/fade_in if fade_in else 1, (count-1-k)/fade_out if fade_out else 1)
+    return original, patch, m
 
 
 def trimmed_audio(first, last, fps):
@@ -700,7 +768,7 @@ def trimmed_audio(first, last, fps):
             f'apad,atrim=duration={float((last-first)/fps)}')
 
 
-def process(cfg, info, mode, out, plan, span=None, segment=False, preset='fast'):
+def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None):
     """Encode one output. A merge span=(first,last) exports only those source frames, with the
     matching audio re-encoded; segment=True makes it video-only for joining."""
     with contextlib.ExitStack() as stack:
@@ -761,19 +829,7 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset='fast')
                         for p,q,reader,j,(x,y,w,h) in active:
                             x -= x0; y -= y0; ws = tuple(p['work_size'])
                             roi = scene[y:y+h,x:x+w].copy()
-                            original = cv2.resize(roi, ws, interpolation=cv2.INTER_LANCZOS4)
-                            patch = cv2.resize(reader.get(j), ws, interpolation=cv2.INTER_LANCZOS4)
-                            affine = curve(p.get('source_to_generated_affine',[1,0,0,0,1,0]),i).reshape(2,3)
-                            patch = cv2.warpAffine(patch,affine,ws,
-                                                  flags=cv2.INTER_LINEAR|cv2.WARP_INVERSE_MAP,
-                                                  borderMode=cv2.BORDER_CONSTANT)
-                            gain, offset = p.get('gain_bgr',[1,1,1]), p.get('offset_bgr',[0,0,0])
-                            if list(gain) != [1,1,1] or list(offset) != [0,0,0]:  # identity is a no-op
-                                patch = np.clip(patch.astype(float)*gain+offset,0,255).round().astype(np.uint8)
-                            m = matte(p['matte'],i,ws); fade = p.get('fade_frames',0)
-                            if fade:
-                                k = i-p['target'][0]
-                                m *= min(1,k/fade,(len(q['indices'])-1-k)/fade)
+                            original, patch, m = patch_inputs(p, i, roi, reader.get(j), len(q['indices']))
                             merged = blend(original,patch,m,p.get('blend','alpha'),p.get('levels',5))
                             # Enforce support again after scaling (including protected mouth).
                             support = cv2.resize(m,(w,h),interpolation=cv2.INTER_NEAREST)>0
@@ -826,7 +882,7 @@ def _segment(job):
     return process(cfg, info, 'merge', Path(path), plans, span, segment=True, preset=preset)[1]
 
 
-def merge_segmented(cfg, info, plans, out, count, preset='fast'):
+def merge_segmented(cfg, info, plans, out, count, preset=None):
     """Merge frame ranges in parallel processes, join without re-encoding, then copy audio once.
 
     Each segment is its own libx264 encode starting on a keyframe, so the bitstream differs from a
@@ -882,7 +938,15 @@ def verify(source, output, expected, copy_audio):
     return {'decode_pass':True, 'output':result, 'audio_payload_sha256':ah}
 
 
+def utf8_console():
+    """Chinese paths and messages print the same on every platform, without PYTHONUTF8."""
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(AttributeError, ValueError):
+            stream.reconfigure(encoding='utf-8', errors='backslashreplace')
+
+
 def main():
+    utf8_console()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode',choices=['doctor','inspect','prepare','merge'])
     parser.add_argument('--config',type=Path)
@@ -900,10 +964,11 @@ def main():
         encoders = run([FFMPEG,'-v','error','-encoders']).decode()
         require('libx264' in encoders, 'FFmpeg needs libx264 encoder')
         print(json.dumps({'security_notice':'Capability check only. Verify patched runtime versions per SECURITY.md before using untrusted media.',
-                          'python':os.sys.version,'opencv':cv2.__version__, 'numpy':np.__version__,
+                          'python':sys.version,'opencv':cv2.__version__, 'numpy':np.__version__,
                           'ffmpeg':run([FFMPEG,'-version']).decode().splitlines()[0],
                           'ffprobe':run([FFPROBE,'-version']).decode().splitlines()[0],
                           'libx264':True,'encode_threads':encode_threads(),
+                          'crf_preset':list(x264_settings()),
                           'segments':segment_count(1 << 30)},ensure_ascii=False,indent=2)); return
     if args.mode == 'inspect':
         require(args.source is not None, '--source required')
@@ -916,7 +981,7 @@ def main():
         parts = args.frames.split(':')
         require(len(parts) == 2 and all(v.isdigit() for v in parts), '--frames must be START:END')
         span = (int(parts[0]), int(parts[1]))
-    preset = 'ultrafast' if args.preview else 'fast'
+    preset = 'ultrafast' if args.preview else None  # None: FLOW_X264_PRESET
     deliverable = span is None and not args.preview
     cfg = load(args.config.resolve())
     # Deliverable runs always re-probe in full; check runs may reuse probes of unchanged inputs.
@@ -926,8 +991,11 @@ def main():
     plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info)
     require(span is None or 0 <= span[0] < span[1] <= info['frames'],
             'Invalid --frames interval for this source')
+    notices = output_notices(info, args.mode)
+    for note in notices:
+        print('NOTICE: '+note, file=sys.stderr)
     if args.dry_run:
-        print(json.dumps({'mode':args.mode,'config':cfg,'source_info':info,'plan':plan},
+        print(json.dumps({'mode':args.mode,'config':cfg,'source_info':info,'plan':plan,'notices':notices},
                          ensure_ascii=False,indent=2)); return
     output = output_path(args.output); report = output_path(output.with_suffix('.report.json'))
     require(output.suffix.lower() in ('.mp4','.mov','.mkv'), 'Output must be MP4/MOV/MKV')
@@ -953,6 +1021,7 @@ def main():
         if not deliverable:
             result['visual_review'] = ('not deliverable: partial/preview export for checking only; '
                                        'final acceptance must use a full export without --frames/--preview')
+        result['notices'] = notices
         result['generated_sha256'] = {p['generated']:sha(p['generated']) for p in cfg.get('patches',[])}
         # Reserve both paths exclusively; remove only files created here on failure.
         with private_output(output, binary=True) as dest, private_output(report) as rpt:
@@ -967,7 +1036,7 @@ if __name__ == '__main__':
         main()
     except (ValueError,KeyError,OSError,subprocess.CalledProcessError,subprocess.TimeoutExpired) as e:
         if isinstance(e,subprocess.CalledProcessError):
-            print(e.stderr.decode(errors='replace') if e.stderr else str(e),file=os.sys.stderr)
+            print(e.stderr.decode(errors='replace') if e.stderr else str(e),file=sys.stderr)
         else:
-            print(str(e),file=os.sys.stderr)
+            print(str(e),file=sys.stderr)
         raise SystemExit(1)

@@ -51,7 +51,7 @@ python scripts/flow_patch.py prepare --config "prepare.json" --output "upload.mp
 python scripts/fit_patch.py --config "merge.json" --patch 0 --output "merge-proposed.json"
 ```
 
-它用未修区估计平移，并对相邻已观察帧平滑，再用多个时间点的参照估计一组固定BGR调色参数；在留出的采样帧误差未降低时不应用新调色。输出为建议，需审看。自动配准失败不会写出配置；调整时序、裁切、`fit_exclude`或手动仿射。fit不是人物跟踪、时间搜索或可靠性证明。
+它用未修区估计平移（`--motion euclidean|affine` 可加受约束的旋转／缩放），并对相邻已观察帧平滑，再用多个时间点的参照估计一组固定BGR调色参数；在留出的采样帧误差未降低时不应用新调色。输出为建议，需审看。自动配准失败不会写出配置；调整时序、裁切、`fit_exclude`或手动仿射。fit不是人物跟踪、时间搜索或可靠性证明。
 
 ## 5. 选择贴回与融合
 

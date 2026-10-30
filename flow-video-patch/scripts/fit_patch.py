@@ -3,6 +3,8 @@
 
 Does not find time offsets or track crop rectangles. Review the proposal before
 using it: a high ECC score can still align the wrong repeated background.
+--motion euclidean adds rotation; affine adds scale and shear. Both stay bounded by
+--max-linear-change so a drifting fit is rejected instead of written.
 """
 import argparse
 import json
@@ -11,21 +13,31 @@ import contextlib
 import cv2
 import numpy as np
 from flow_patch import (load, validate_source, probe, mapping, Reader, rectangle,
-                        matte, require, curve, checked_size, private_output, output_path)
+                        matte, require, curve, checked_size, private_output, output_path,
+                        utf8_console)
+
+MOTIONS = {'translation': cv2.MOTION_TRANSLATION, 'euclidean': cv2.MOTION_EUCLIDEAN,
+           'affine': cv2.MOTION_AFFINE}
 
 
 def main():
+    utf8_console()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--config', type=Path, required=True)
     ap.add_argument('--patch', type=int, default=0)
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--min-correlation', type=float, default=.8)
     ap.add_argument('--max-shift', type=float, default=24)
+    ap.add_argument('--motion', choices=list(MOTIONS), default='translation')
+    ap.add_argument('--max-linear-change', type=float, default=.08,
+                    help='largest allowed change of the 2x2 linear part from the initial affine')
     args = ap.parse_args()
     require(args.patch >= 0, 'Patch index must be nonnegative')
     require(np.isfinite(args.min_correlation) and -1 <= args.min_correlation <= 1,
             'Correlation must be finite and in [-1,1]')
     require(np.isfinite(args.max_shift) and args.max_shift >= 0, 'Shift must be finite and nonnegative')
+    require(np.isfinite(args.max_linear_change) and 0 <= args.max_linear_change <= .5,
+            'Linear change bound must be finite and in [0,0.5]')
     args.output = output_path(args.output)
     cfg = load(args.config.resolve()); info = validate_source(cfg)
     require(args.patch < len(cfg.get('patches', [])), 'Patch index out of range')
@@ -57,13 +69,14 @@ def main():
                     'Too little unchanged background/clothing; use manual alignment')
             initial = curve(p.get('source_to_generated_affine',[1,0,0,0,1,0]),i).reshape(2,3).astype(np.float32)
             try:
-                # Translation is deliberately conservative. Affine scale/rotation remain manual.
+                # Translation (default) is deliberately conservative; other motions are bounded.
                 guess = initial.copy() if k == 0 else previous.copy()
                 corr,warp = cv2.findTransformECC(cv2.cvtColor(a,cv2.COLOR_BGR2GRAY),
-                            cv2.cvtColor(b,cv2.COLOR_BGR2GRAY),guess,cv2.MOTION_TRANSLATION,
+                            cv2.cvtColor(b,cv2.COLOR_BGR2GRAY),guess,MOTIONS[args.motion],
                             (cv2.TERM_CRITERIA_COUNT|cv2.TERM_CRITERIA_EPS,100,1e-5),mask,5)
                 accepted = bool(corr >= args.min_correlation and
-                                np.linalg.norm(warp[:,2]-initial[:,2]) <= args.max_shift)
+                                np.linalg.norm(warp[:,2]-initial[:,2]) <= args.max_shift and
+                                np.abs(warp[:,:2]-initial[:,:2]).max() <= args.max_linear_change)
             except cv2.error:
                 corr,warp,accepted = None,initial,False
             if accepted:
@@ -109,6 +122,7 @@ def main():
             if color_report['applied']:
                 p['gain_bgr'],p['offset_bgr'] = gains,offsets
     cfg['fit_review'] = {'status':'proposal; inspect representative frames and playback before final export',
+                         'motion':args.motion,
                          'temporal_alignment':'provided mapping, not automatically proven',
                          'registration':rows,'smoothing':'[0.25,0.5,0.25] on adjacent observed frames',
                          'color':color_report}

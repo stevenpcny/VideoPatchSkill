@@ -20,11 +20,10 @@ jobs:
       run:
         shell: bash
         working-directory: flow-video-patch
-    env:
-      PYTHONUTF8: '1'
+    # No PYTHONUTF8: the scripts set UTF-8 output themselves, and Windows checks that.
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install FFmpeg

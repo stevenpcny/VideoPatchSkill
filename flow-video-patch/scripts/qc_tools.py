@@ -6,6 +6,7 @@
   track      coarse head/box tracking by normalized template matching (OpenCV core only)
   sharpness  Laplacian variance of a (tracked) region, optionally resized to final scale
   slit       time-slice image of one column band along a track, for reading landmarks over time
+  seam       transition-band mismatch of one merge patch (w=4a(1-a)), before or between candidates
 
 All frame indices are zero-based. Rectangles are x,y,w,h in the measured video's pixels.
 Results are evidence for a human decision, not proof of identity, lip sync or a seamless merge.
@@ -106,7 +107,7 @@ def region_for(a, n, boxes):
 
 
 def cmd_sharpness(a):
-    boxes = json.loads(Path(a.track).read_text())['boxes'] if a.track else None
+    boxes = json.loads(Path(a.track).read_text(encoding='utf-8'))['boxes'] if a.track else None
     vals = []
     for n, f in frames(a.video):
         if a.resize:
@@ -120,7 +121,7 @@ def cmd_sharpness(a):
 
 
 def cmd_slit(a):
-    boxes = json.loads(Path(a.track).read_text())['boxes']
+    boxes = json.loads(Path(a.track).read_text(encoding='utf-8'))['boxes']
     cols = []
     for n, f in frames(a.video):
         _, x, y, w, h, _ = boxes[n]
@@ -133,7 +134,52 @@ def cmd_slit(a):
     return {'image': str(out), 'x_axis': 'frame index * zoom', 'y_axis': f'box-relative rows {a.rows[0]}..{a.rows[1]} * zoom*2'}
 
 
+def cmd_seam(a):
+    """Score one patch's seam exactly as merge would blend it (references/return-fit-assessment.md 5)."""
+    cfg = fp.load(Path(a.config).resolve()); info = fp.validate_source(cfg)
+    fp.require(0 <= a.patch < len(cfg.get('patches', [])), 'Patch index out of range')
+    fp.require(a.step >= 1 and a.sigma > 0 and a.threshold >= 0, 'Invalid step/sigma/threshold')
+    p = cfg['patches'][a.patch]; gi = fp.probe(p['generated'])
+    plan = fp.merge_plan(dict(cfg, patches=[p]), info)[0]
+    indices = plan['indices']; first = p['target'][0]
+    grid = lambda i: i['fps'] if i.get('on_frame_grid') else None
+    src = fp.Reader(cfg['source'], info['size'], info['color'], first, grid(info))
+    gen = fp.Reader(p['generated'], gi['size'], gi['color'],
+                    min((j for j in indices if j is not None), default=0), grid(gi))
+    blur = lambda im: cv2.GaussianBlur(im, (0, 0), a.sigma)
+    rows = []
+    try:
+        for k, i in enumerate(range(*p['target'])):
+            j = indices[k]
+            if j is None or k % a.step:
+                continue
+            x, y, w, h = fp.rectangle(p['crop'], i, info['size'])
+            original, patch, m = fp.patch_inputs(p, i, src.region(i, (x, y, w, h)), gen.get(j), len(indices))
+            o, g = original.astype(np.float32), patch.astype(np.float32)
+            lo, lg = blur(o), blur(g)
+            high = np.abs((g-lg)-(o-lo)).mean(2)  # new vs old detail, each minus its own low-pass
+            low = np.abs(lg-lo).mean(2)           # colour/brightness step across the seam
+            wgt = 4*m*(1-m); band = wgt > .2
+            total = float(wgt[band].sum())
+            rows.append({'frame': i, 'band_pixels': int(band.sum()),
+                         'high_freq_weighted_mean': float((high*wgt)[band].sum()/total) if total else 0.0,
+                         'low_freq_weighted_mean': float((low*wgt)[band].sum()/total) if total else 0.0,
+                         'large_high_freq_pixels': int(((wgt > .5) & (high > a.threshold)).sum())})
+    finally:
+        src.close(); gen.close()
+    fp.require(rows, 'No mapped frames to measure')
+    worst = sorted(rows, key=lambda r: -r['high_freq_weighted_mean'])[:5]
+    key = lambda name: [r[name] for r in rows]
+    return {'patch': a.patch, 'frames_measured': len(rows), 'sigma': a.sigma, 'threshold': a.threshold,
+            'summary': {name: {'mean': float(np.mean(key(name))), 'max': float(np.max(key(name)))}
+                        for name in ('high_freq_weighted_mean', 'low_freq_weighted_mean',
+                                     'large_high_freq_pixels')},
+            'worst_frames': [r['frame'] for r in worst], 'frames': rows,
+            'note': 'Compare candidates of the same shot; lower is a less visible seam. Not visual acceptance.'}
+
+
 def main():
+    fp.utf8_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
     s = sub.add_parser('green'); s.add_argument('--video', required=True)
@@ -154,6 +200,10 @@ def main():
     s = sub.add_parser('slit'); s.add_argument('--video', required=True); s.add_argument('--track', required=True)
     s.add_argument('--rows', type=int, nargs=2, required=True); s.add_argument('--columns', type=int, nargs=2, required=True)
     s.add_argument('--zoom', type=int, default=4); s.add_argument('--out', required=True)
+    s = sub.add_parser('seam'); s.add_argument('--config', required=True)
+    s.add_argument('--patch', type=int, default=0); s.add_argument('--step', type=int, default=1)
+    s.add_argument('--sigma', type=float, default=3, help='Gaussian low-pass sigma in work pixels')
+    s.add_argument('--threshold', type=float, default=12, help='high-frequency difference counted as large')
     a = ap.parse_args()
     print(json.dumps(globals()['cmd_' + a.cmd](a), ensure_ascii=False))
 

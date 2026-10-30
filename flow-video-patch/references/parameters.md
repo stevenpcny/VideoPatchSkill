@@ -9,7 +9,7 @@
 - `output_size`/`work_size`为局部画布尺寸。蒙块、贴回matte、protect、fit_exclude在局部画布坐标中。
 - 可变几何支持常量向量或`[{"frame":0,"value":[...]}, ...]`，frame始终为**绝对源帧号**，不是局部片段号。关键帧之间线性插值，前后沿用端值；矩形最终四舍五入成整数。突变/遮挡需补关键帧。
 - 裁切宽高比须与输出/工作尺寸在0.5%内一致，不加隐式黑边或拉伸。上传蒙块可小于贴回范围，两者职责不同。
-- 编码固定libx264、8位yuv420p、CRF17；实际预处理为BGR8。高位深/HDR不走此路线。最终尺寸须是偶数。
+- 编码为libx264、8位yuv420p，默认CRF17、preset fast，可用环境变量 `FLOW_CRF`（0–51）与 `FLOW_X264_PRESET`（ultrafast…veryslow）调整，实际值写入报告命令；同一任务的候选比较保持同一设置。实际预处理为BGR8。高位深/HDR不走此路线。最终尺寸须是偶数。
 
 ## prepare
 
@@ -46,6 +46,7 @@
 | `blend` | alpha或multiband |
 | `levels` | 多频段金字塔层数1–6，工作宽高须至少`2**levels*2`；默认5 |
 | `fade_frames` | 时间淡变，默认0；开启后首尾权重变为0，整脸替换要审查叠影 |
+| `fade_in_frames`／`fade_out_frames` | 分别设首／尾淡变长度，覆盖 `fade_frames` 对应一端；两者之和不超过target帧数 |
 | `gain_bgr` / `offset_bgr` | 固定BGR增益/偏移，默认[1,1,1]/[0,0,0]；**不是RGB顺序** |
 | `fit_exclude` | 只用于fit：排除未可信的手/乐器/动态背景区域，局部矩形列表 |
 
@@ -61,9 +62,9 @@
 python scripts/fit_patch.py --config "merge.json" --patch 0 --output "proposed.json"
 ```
 
-仅对所选patch提出配准与固定调色，其他patch保持不变。使用ECC平移模型，以贴回范围外、排除fit_exclude后的像素估计；默认相关性门槛0.8、相对初始平移最多24工作像素。可用`--min-correlation`和`--max-shift`调整，但不能靠放宽门槛掩盖错误时序。fit输出中媒体路径变为绝对路径，分享前需清理。
+仅对所选patch提出配准与固定调色，其他patch保持不变。默认使用ECC平移模型，以贴回范围外、排除fit_exclude后的像素估计；默认相关性门槛0.8、相对初始平移最多24工作像素。`--motion euclidean`（加旋转）或 `--motion affine`（加缩放、错切）用于返回片整体缩放／转动的情况，2×2 线性部分相对初始值的变化不得超过 `--max-linear-change`（默认0.08），超出即不写建议。可用`--min-correlation`和`--max-shift`调整，但不能靠放宽门槛掩盖错误时序。fit输出中媒体路径变为绝对路径，分享前需清理。
 
-全部映射帧配准通过才输出建议，颜色要有至少3个采样时刻、足够非暗部/高光参照，最后一组采样留出验证；不改善则保留旧颜色参数。动态光线无法靠一组固定参数完全解决。平滑的是空间变换，不是视频帧序。需要缩放、旋转、复杂跟踪时可人工提供affine或在按工具白名单扩展流程核查并获批后使用外部工具计算，不把平移拟合当完整仿射配准。
+全部映射帧配准通过才输出建议，颜色要有至少3个采样时刻、足够非暗部/高光参照，最后一组采样留出验证；不改善则保留旧颜色参数。动态光线无法靠一组固定参数完全解决。平滑的是空间变换，不是视频帧序。逐帧形变超出上限、局部变形或复杂跟踪时，人工提供affine，或按工具白名单扩展流程核查并获批后使用外部工具计算。
 
 ## 命令与报告
 
@@ -76,6 +77,8 @@ python scripts/flow_patch.py merge --config "merge.json" --output "patched.mp4" 
 python scripts/flow_patch.py merge --config "merge.json" --output "patched.mp4"
 python scripts/flow_patch.py merge --config "merge.json" --output "check-40-80.mp4" --frames 40:80 --preview
 ```
+
+接缝量化（只读）：`python scripts/qc_tools.py seam --config merge.json --patch 0 [--step 2]` 按合成时相同的对齐、调色、遮罩与淡变，计算过渡带（`w=4a(1−a)>0.2`）内新旧高频差、低频差的加权均值，以及 `w>0.5` 且高频差超过 `--threshold` 的像素数；输出逐帧数值、汇总与最差帧。用于同一镜头候选方案的比较，不代表视觉验收。
 
 检查用导出（仅 `merge`）：`--frames START:END` 只导出原片帧 `[START,END)`，配置中的帧号不用改，各帧与完整导出的同号帧来自同一计算；该段音频重编码为 AAC。`--preview` 改用 libx264 `ultrafast` 编码，画面计算不变、编码更快、文件更大。两者可单用或合用，报告 `scope.deliverable=false`、`visual_review` 标为不可交付，终端输出注明 "check only, not deliverable"；最终交付与视觉验收必须用不带这两个参数的完整导出。检查用导出在输出目录的 `.flow-probe-cache/` 缓存原片与返回片的探测结果（按路径、大小、修改时间与 inode 识别，文件变动即重新探测），正式导出始终完整探测、不读写缓存；该目录可随时删除。`prepare` 不接受这两个参数，上传 Flow 的素材始终完整编码。
 
