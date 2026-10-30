@@ -24,7 +24,7 @@ $env:RUSTFLAGS = '-C linker=rust-lld.exe'
 cargo build --release --locked --offline --manifest-path native/Cargo.toml
 ```
 
-MSVC 工具链未在中文路径下验证。
+MSVC 工具链未在中文路径下验证；只装 Rust 而未装 Visual Studio Build Tools／Windows SDK 时，MSVC 目标会在链接阶段缺少 kernel32.lib 等系统库而失败，此时改用上面的 GNU 工具链。
 
 产物位于 `native/target/release/`（Linux `libflow_kernels.so`、macOS `libflow_kernels.dylib`、Windows `flow_kernels.dll`），不入库、不打包。
 

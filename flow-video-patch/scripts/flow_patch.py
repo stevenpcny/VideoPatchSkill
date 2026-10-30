@@ -9,6 +9,8 @@ import bisect
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 import contextlib
 import ctypes
+import functools
+import importlib.metadata
 from fractions import Fraction
 import hashlib
 import json
@@ -385,7 +387,7 @@ def bgr_to_yuv420(bgr, color):
 _PROBED = {}
 
 
-PROBE_CACHE_FORMAT = 1
+PROBE_CACHE_FORMAT = 2  # 2: probe info gained time_base
 
 
 def cached_probe(path, cache):
@@ -414,14 +416,30 @@ def prefetch_probes(paths, cache=None):
     pool.shutdown(wait=False)
 
 
-def probe(path):
+_PASSES = {}
+
+
+def decode_pass(path, strict=False):
+    """One full decode giving per-frame timestamps (seconds, demuxer time base, no rounding) and
+    128-bit murmur3 hashes. strict stops at the first decode error (-xerror), as output checks need."""
+    lines = run([FFMPEG, '-v', 'error', *(['-xerror'] if strict else []), *file_input(path), '-map', '0:v:0',
+                 '-fps_mode', 'passthrough', '-enc_time_base:v', 'demux', '-f', 'framehash', '-hash', 'murmur3',
+                 '-']).decode().splitlines()
+    tb = next(Fraction(line.split(':', 1)[1].strip()) for line in lines if line.startswith('#tb 0:'))
+    rows = [[x.strip() for x in line.split(',')] for line in lines if line and not line.startswith('#')]
+    result = ([float(int(r[2])*tb) for r in rows], [r[5] for r in rows])
+    _PASSES[local_media(path)] = result
+    return result
+
+
+def probe(path, strict=False):
     path = local_media(path)
     if path in _PROBED:
         return _PROBED[path].result()
-    return _probe(path)
+    return _probe(path, strict)
 
 
-def _probe(path):
+def _probe(path, strict=False):
     # Headers only; the single decoding pass below counts frames and reads timestamps.
     data = json.loads(run([FFPROBE, '-v', 'error', '-show_streams',
                            '-of', 'json', '-protocol_whitelist', 'file', path]))
@@ -440,13 +458,9 @@ def _probe(path):
     require(s.get('sample_aspect_ratio', '1:1') in ('1:1', 'N/A'), 'Require square pixels')
     fps = Fraction(s['avg_frame_rate'])
     require(fps > 0 and fps == Fraction(s['r_frame_rate']), 'Require constant frame rate')
-    # Equal rate fields alone do not prove CFR. Check decoded timestamps.
-    decoded = json.loads(run([FFPROBE, '-v', 'error', '-select_streams', 'v:0', '-count_frames',
-                              '-show_frames', '-show_entries',
-                              'stream=nb_read_frames:frame=best_effort_timestamp_time',
-                              '-of', 'json', '-protocol_whitelist', 'file', path]))
-    s['nb_read_frames'] = decoded['streams'][0]['nb_read_frames']
-    times = [float(f['best_effort_timestamp_time']) for f in decoded['frames']]
+    # Equal rate fields alone do not prove CFR. Check decoded timestamps; the same decoding pass
+    # also hashes every frame for later bit-exact comparisons.
+    times = decode_pass(path, strict)[0]
     require(len(times) > 0, 'No decoded frames')
     # A coarse time base (e.g. MKV milliseconds) rounds each step by up to one tick.
     tick = float(Fraction(s.get('time_base', '0/1'))) if s.get('time_base') else 0.0
@@ -457,7 +471,6 @@ def _probe(path):
     audio = next((a for a in data['streams'] if a['codec_type'] == 'audio'), None)
     require(audio is None or abs(float(audio.get('start_time', 0))) < 0.001,
             'Audio starts at a nonzero timestamp; normalize offsets explicitly')
-    require(len(times) == int(s['nb_read_frames']), 'Frame count mismatch')
     # Frame n at n/fps (within a quarter frame) lets readers seek straight to a frame.
     grid = all(abs(t-n/fps) < 0.25/fps for n, t in enumerate(times))
     counts = {kind: sum(x['codec_type'] == kind for x in data['streams'])
@@ -466,7 +479,8 @@ def _probe(path):
               'yuv444p': '4:4:4', 'yuvj444p': '4:4:4'}.get(s['pix_fmt'], 'rgb')
     return {'size': [s['width'], s['height']], 'fps': str(fps), 'frames': len(times),
             'audio': audio is not None, 'color': color_info(s), 'on_frame_grid': grid,
-            'chroma': chroma, 'streams': counts, 'codec': s.get('codec_name')}
+            'chroma': chroma, 'streams': counts, 'codec': s.get('codec_name'),
+            'time_base': s.get('time_base')}
 
 
 def output_notices(info, mode):
@@ -1133,6 +1147,12 @@ def copy_unpatched_reason(info):
         return f"source chroma is {info['chroma']}, not 4:2:0"
     if not info.get('on_frame_grid'):
         return 'source timestamps are not on the frame grid'
+    # Copied packets keep the source's timestamps, so its time base must hold every frame time exactly;
+    # Matroska's milliseconds cannot at 23.976 or 60 fps, which would fail the joined-stream check.
+    tb = Fraction(info.get('time_base') or '0/1')
+    if not tb or (1/Fraction(info['fps'])/tb).denominator != 1:
+        return (f"source time base {info.get('time_base')} cannot hold {info['fps']} fps frame times exactly "
+                '(remux to MP4/MOV first to use --copy-unpatched)')
     return None
 
 
@@ -1154,10 +1174,9 @@ def keyframe_indices(path, fps, frames):
 
 
 def frame_hashes(path):
-    """128-bit murmur3 of every decoded frame (about the cost of decoding; MD5 is ~3x slower)."""
-    lines = run([FFMPEG, '-v', 'error', *file_input(path), '-map', '0:v:0', '-fps_mode', 'passthrough',
-                 '-f', 'framehash', '-hash', 'murmur3', '-']).decode().splitlines()
-    return [line.rsplit(',', 1)[1].strip() for line in lines if line and not line.startswith('#')]
+    """Per-frame murmur3 hashes, reusing this process's decoding pass of the file when there is one."""
+    key = local_media(path)
+    return (_PASSES.get(key) or decode_pass(path))[1]
 
 
 def merge_copy_unpatched(cfg, info, plans, out, preset=None):
@@ -1187,7 +1206,9 @@ def merge_copy_unpatched(cfg, info, plans, out, preset=None):
     try:
         return _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, work, checks)
     finally:
-        checks.shutdown(wait=False, cancel_futures=True)
+        # Wait for background checks, so no FFmpeg still holds a file when a fallback deletes or
+        # rewrites it (Windows refuses to remove open files: issue #10).
+        checks.shutdown(wait=True, cancel_futures=True)
 
 
 def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, work, checks):
@@ -1231,16 +1252,15 @@ def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, 
             *file_input(cfg['source']), '-map', '0:v:0', '-map', '1:a:0?', '-c', 'copy',
             '-bsf:v', 'h264_mp4toannexb,'+colour_tags(info['color']), '-movflags', '+faststart', str(out)]
     run(join)
-    probe_job, output_job = checks.submit(_probe, str(out)), checks.submit(frame_hashes, out)
     try:
-        joined = probe_job.result()
-    except ValueError as e:
-        raise CopyFallback(f'joined stream timing failed its check ({e})') from e
+        joined = _probe(str(out), strict=True)  # one strict decode: timing, errors and frame hashes
+    except (ValueError, subprocess.CalledProcessError) as e:
+        raise CopyFallback(f'joined stream failed its decode/timing check ({e})') from e
     if joined['frames'] != frames:
         raise CopyFallback('joined stream has a different frame count')
     probed = Future(); probed.set_result(joined)
     _PROBED[local_media(out)] = probed  # verify() reuses this full probe of the unchanged file
-    source_md5, output_md5 = source_md5.result(), output_job.result()
+    source_md5, output_md5 = source_md5.result(), frame_hashes(out)
     copied = [i for a, b, render in pieces if not render for i in range(a, b)]
     if len(output_md5) != frames or any(source_md5[i] != output_md5[i] for i in copied):
         raise CopyFallback('copied frames do not decode identically to the source')
@@ -1256,22 +1276,86 @@ def _copy_unpatched(cfg, info, plans, out, preset, frames, keys, delay, pieces, 
 
 
 def verify(source, output, expected, copy_audio):
-    # Independent full reads of the output run side by side; every check still runs.
-    with ThreadPoolExecutor(4) as pool:
-        probed = pool.submit(probe, output)
-        decoded = pool.submit(run, [FFMPEG,'-v','error','-xerror',*file_input(output),'-f','null','-'])
+    # One strict decoding pass checks errors, frame count and timing; audio hashes run alongside.
+    with ThreadPoolExecutor(3) as pool:
+        probed = pool.submit(probe, output, True)
         hashes = ([pool.submit(audio_hash, source), pool.submit(audio_hash, output)]
                   if copy_audio and expected['audio'] else None)
         result = probed.result()
         require(result['size'] == expected['size'] and result['frames'] == expected['frames']
                 and result['fps'] == expected['fps'] and result['audio'] == expected['audio'],
                 'Output size, frames, fps or audio presence mismatch')
-        decoded.result()
         ah = None
         if hashes:
             ah = hashes[0].result()
             require(ah == hashes[1].result(), 'Original audio payload changed')
     return {'decode_pass':True, 'output':result, 'audio_payload_sha256':ah}
+
+
+@functools.lru_cache(maxsize=None)
+def tool_version(tool):
+    return run([tool, '-version']).decode().splitlines()[0]
+
+
+def opencv_distribution():
+    for name in ('opencv-python', 'opencv-python-headless', 'opencv-contrib-python', 'opencv-contrib-python-headless'):
+        with contextlib.suppress(importlib.metadata.PackageNotFoundError):
+            return f'{name} {importlib.metadata.version(name)}'
+    return 'unknown distribution'
+
+
+def tool_inventory():
+    """Tools this run actually uses, for the delivery list SKILL.md asks for. Licence terms are in
+    THIRD_PARTY_NOTICES.md; optional components are those recorded in TOOL_POLICY.json."""
+    notices = 'THIRD_PARTY_NOTICES.md'
+    encoder_name = video_encoder()
+    items = [{'tool': 'CPython', 'version': sys.version.split()[0], 'allowlist': 'default', 'license_reference': notices},
+             {'tool': 'NumPy', 'version': np.__version__, 'allowlist': 'default', 'license_reference': notices},
+             {'tool': 'OpenCV', 'version': f'cv2 {cv2.__version__} ({opencv_distribution()})', 'allowlist': 'default',
+              'license_reference': notices},
+             {'tool': 'FFmpeg', 'version': tool_version(FFMPEG), 'allowlist': 'default', 'license_reference': notices},
+             {'tool': 'ffprobe', 'version': tool_version(FFPROBE), 'allowlist': 'default', 'license_reference': notices},
+             {'tool': 'video encoder', 'version': encoder_name, 'license_reference': notices,
+              'allowlist': 'default' if encoder_name == 'libx264' else 'optional: ffmpeg_hardware_h264 (TOOL_POLICY.json)'}]
+    if kernels():
+        items.append({'tool': 'flow_kernels (native/)', 'version': f'ABI {NativeKernels.ABI}, built locally',
+                      'allowlist': 'optional: flow_kernels_native (TOOL_POLICY.json)', 'license_reference': notices})
+    return items
+
+
+def prefilled_review(result, cfg, output, report):
+    """Visual review record with only the fields the run itself establishes; every visual check that
+    needs a person stays not_run and the overall status stays pending_visual_review."""
+    record = json.loads((Path(__file__).resolve().parents[1]/'assets'/'visual-review-template.json')
+                        .read_text(encoding='utf-8'))
+    out = result['output']
+    record.update(source=Path(cfg['source']).name, output=output.name, output_sha256=result['output_sha256'],
+                  fps=out['fps'], output_frames=out['frames'], technical_report=report.name,
+                  repair_source_intervals_half_open=[p['target'] for p in cfg['patches']])
+    record['technical_validation'] = {'status': 'pass', 'evidence': [
+        f'{report.name}: strict full decode, size/fps/frame count'
+        + (', original audio payload SHA-256' if result.get('audio_payload_sha256') else '')]}
+    declared = []
+    for p in cfg['patches']:
+        indices = mapping(p, p['target'][1])
+        valid = [j for j in indices if j is not None]
+        declared.append({'target': p['target'], 'generated': Path(p['generated']).name,
+                        'generated_range': [min(valid), max(valid)] if valid else None,
+                        'repeated_frames': len(valid)-len(set(valid)), 'kept_original_frames': indices.count(None)})
+    record['frame_mapping_evidence'] = {'kind': 'declared in the configuration (not proof of alignment)',
+                                        'patches': declared}
+    for check in record['visual_checks']:
+        if check['id'] == 'decode_dimensions_fps_frames':
+            check.update(status='pass', evidence=[report.name], notes='Automatic: strict decode, size, fps and frames')
+        elif check['id'] == 'original_audio_payload':
+            if result.get('audio_payload_sha256'):
+                check.update(status='pass', evidence=[report.name],
+                             notes='Automatic: copied audio payload SHA-256 equals the source')
+            elif not out.get('audio'):
+                check.update(status='not_applicable', notes='Source has no audio stream')
+    record['prefilled'] = {'by': 'flow_patch.py merge', 'note': 'Only automatic fields are filled; '
+                           'all other checks remain not_run until a person reviews the final file.'}
+    return record
 
 
 def utf8_console():
@@ -1303,8 +1387,8 @@ def main():
         require('libx264' in encoders, 'FFmpeg needs libx264 encoder')
         print(json.dumps({'security_notice':'Capability check only. Verify patched runtime versions per SECURITY.md before using untrusted media.',
                           'python':sys.version,'opencv':cv2.__version__, 'numpy':np.__version__,
-                          'ffmpeg':run([FFMPEG,'-version']).decode().splitlines()[0],
-                          'ffprobe':run([FFPROBE,'-version']).decode().splitlines()[0],
+                          'ffmpeg':tool_version(FFMPEG),'ffprobe':tool_version(FFPROBE),
+                          'opencv_distribution':opencv_distribution(),
                           'libx264':True,'encode_threads':encode_threads(),
                           'crf_preset':list(x264_settings()),
                           'video_encoder':video_encoder(),
@@ -1333,8 +1417,8 @@ def main():
             f'{video_encoder()} for a deliverable or Flow upload needs FLOW_HW_DELIVERABLE=1 after '
             'comparing its quality with libx264; see references/remote-worker.md')
     cfg = load(args.config.resolve())
-    # Deliverable runs always re-probe in full; check runs may reuse probes of unchanged inputs.
-    cache = None if deliverable else output_path(args.output).parent/'.flow-probe-cache'
+    # Deliverable runs always re-probe in full; check runs and dry runs may reuse probes of unchanged inputs.
+    cache = None if deliverable and not args.dry_run else output_path(args.output).parent/'.flow-probe-cache'
     prefetch_probes([cfg['source'], *(p['generated'] for p in cfg.get('patches', []))], cache)
     info = validate_source(cfg)
     plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info)
@@ -1352,7 +1436,10 @@ def main():
                          ensure_ascii=False,indent=2)); return
     output = output_path(args.output); report = output_path(output.with_suffix('.report.json'))
     require(output.suffix.lower() in ('.mp4','.mov','.mkv'), 'Output must be MP4/MOV/MKV')
-    require(not output.exists() and not report.exists(), 'Output/report exists; choose new name')
+    # Deliverable merges also get a pre-filled visual review record next to the report.
+    review = output_path(output.with_suffix('.visual-review.json')) if args.mode == 'merge' and deliverable else None
+    require(not output.exists() and not report.exists() and not (review and review.exists()),
+            'Output/report/review record exists; choose new name')
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.flow-patch-',dir=output.parent) as tmp:
         temp = Path(tmp)/output.name
@@ -1395,12 +1482,19 @@ def main():
         if args.copy_unpatched:
             result['copy_unpatched'] = smart or {'used': False}
         result['generated_sha256'] = {p['generated']:sha(p['generated']) for p in cfg.get('patches',[])}
-        # Reserve both paths exclusively; remove only files created here on failure.
-        with private_output(output, binary=True) as dest, private_output(report) as rpt:
+        result['tools'] = tool_inventory()
+        # Reserve every path exclusively; remove only files created here on failure.
+        with contextlib.ExitStack() as files:
+            dest = files.enter_context(private_output(output, binary=True))
+            rpt = files.enter_context(private_output(report))
             with temp.open('rb') as src:
                 shutil.copyfileobj(src, dest)
             json.dump(result, rpt, ensure_ascii=False, indent=2)
-    print(f'PASS{"" if deliverable else " (check only, not deliverable)"}: {output}\nReport: {report}')
+            if review is not None:
+                json.dump(prefilled_review(result, cfg, output, report),
+                          files.enter_context(private_output(review)), ensure_ascii=False, indent=2)
+    print(f'PASS{"" if deliverable else " (check only, not deliverable)"}: {output}\nReport: {report}'
+          + (f'\nVisual review record (pre-filled, pending): {review}' if review is not None else ''))
 
 
 if __name__ == '__main__':
