@@ -27,6 +27,7 @@ description: Prepare masked video clips for Flow and composite returned patches 
 - 眼镜/手部保护、绿罩与融合遮罩、候选选择、分段和清晰度问题：读 [局部补丁经验](references/patch-lessons.md)，按实际目标选用，不扩大修补范围。
 - 接缝或遮挡问题：读 [方案选择与通用示例](references/cases.md)，不要把单个案例的策略升级成所有视频通用规则。
 - 换人后身体露肤（脖子、手、前臂）肤色不符：读 [身体露肤匹配](references/skin-match.md)。
+- 观众／背景人物刷口型的紧裁取景、用户截图定绿幕、只交付片段或裁切画布、Flow 返回皮肤偏色（背景对上而皮肤偏绿少红）：读[裁切小片段与肤色偏差](references/crop-clip-and-skin-cast.md)。
 - 返回片疑似变速、遮罩透出旧脸、头周暗圈、高位深偏色或清晰度不协调：读[高级合成诊断](references/advanced-compositing.md)。它提供检查方法，不扩大主脚本能力或工具授权。
 - 收到 Flow 返回片、需要更高清晰度、10bit 源片或返回片缺帧/残留色块：读[实片经验](references/field-lessons.md)，用 `scripts/qc_tools.py` 做认段、帧数、偏移、残色、成片尺度清晰度核对。
 - 补眼/去斜视、跟踪裁切发"跳"、给高清化选取景、返回片改了画幅或表情、两次独立生成叠加（高清底板+局部补丁）、超高分辨率底版（如4倍放大、10位）、高清竖条贴回静态底图：读[实片经验二](references/hd-relay-lessons.md)。
@@ -46,7 +47,11 @@ description: Prepare masked video clips for Flow and composite returned patches 
 
 ## 需求澄清
 
-当用户需求不够明确，且不同理解可能显著增加检查、遮罩、生成、合成或渲染时间时，可以先问用户 1–2 个关键问题澄清。优先问会改变处理范围、质量目标或工作量的问题；已有明确授权和答案不重复询问，普通可逆的小选择按现有信息继续。
+当用户需求不够明确，且不同理解可能显著增加检查、遮罩、生成、合成或渲染时间时，可以先问用户 1–2 个关键问题澄清。优先问会改变处理范围、质量目标或工作量的问题；已有明确授权和答案不重复询问，普通可逆的小选择按现有信息继续。常见含混说法、默认理解与对应的已验证路线见[常见含混说法与案例套用](references/intent-questions.md)。
+
+## 经验记录
+
+开始任务前先查本机经验索引 `~/.claude/flow-patch-local/experience/INDEX.md`，有同类案例就说明套用哪条、哪些参数重测。踩坑（方案失败、返工、用户指出问题、找到根因）当下记录；交付且用户认可后记录成功案例，写到下次能照做的程度（配置、参数、命令、脚本外步骤、提示词、验证证据）。结论经至少两次独立案例或本地复现确认后，再抽象升级进技能。格式与规则见[成功案例与踩坑记录](references/experience-log.md)。
 
 ## 实施原则
 
