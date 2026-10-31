@@ -338,27 +338,107 @@ def native_self_check(k):
 
 
 PREFETCH = 3
+FRAME_POOL_MIN = 1024*1024
+RAW_POOL_BUDGET = 128*1024*1024
+OUTPUT_POOL_BUDGET = 64*1024*1024
+
+
+class _FramePool:
+    """Bounded frame leases; only the consumer may release an acquired buffer.
+
+    Large/small frames keep the original allocator. The limits cover bytearray
+    payload, not total RSS. Duplicate releases cannot enqueue a buffer twice.
+    """
+    def __init__(self, size, budget):
+        self.size = size
+        self.limit = PREFETCH+2 if FRAME_POOL_MIN <= size and size*(PREFETCH+2) <= budget else 0
+        self.available = queue.Queue()
+        self.buffers = {}
+        self.leased = {}
+        self.lock = threading.Lock()
+
+    def acquire(self, stopping):
+        if not self.limit:
+            return bytearray(self.size)
+        while not stopping.is_set():
+            try:
+                buf = self.available.get_nowait()
+            except queue.Empty:
+                with self.lock:
+                    if len(self.buffers) < self.limit:
+                        buf = bytearray(self.size)
+                        self.buffers[id(buf)] = buf
+                        self.leased[id(buf)] = False
+                        return buf
+                try:
+                    buf = self.available.get(timeout=.1)
+                except queue.Empty:
+                    continue
+            with self.lock:
+                self.leased[id(buf)] = False
+            return buf
+        return None
+
+    def submitted(self, buf):
+        with self.lock:
+            if id(buf) in self.buffers:
+                require(self.leased.get(id(buf)) is False,
+                        'Encoder buffer is already queued or released')
+                self.leased[id(buf)] = True
+
+    def release(self, buf):
+        with self.lock:
+            if id(buf) not in self.leased:
+                return
+            del self.leased[id(buf)]
+        self.available.put(buf)
 
 
 class FrameWriter:
-    """Writes encoder input in a thread so encoding overlaps the next frame's work."""
+    """Writes in a thread; acquired buffers return only after write completion.
+
+    Callers using write() alone retain the original allocation/ownership contract.
+    """
     def __init__(self, pipe):
         self.pipe, self.error = pipe, None
         self.items = queue.Queue(PREFETCH)
+        self.stopping = threading.Event()
+        self.pool = None
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
     def _run(self):
-        while (item := self.items.get()) is not None:
-            if self.error is None:
+        try:
+            while (item := self.items.get()) is not None:
                 try:
-                    self.pipe.write(item)
-                except (OSError, ValueError) as e:
-                    self.error = e
+                    if self.error is None:
+                        try:
+                            self.pipe.write(item)
+                        except (OSError, ValueError) as e:
+                            self.error = e
+                finally:
+                    if self.pool is not None:
+                        self.pool.release(item)  # the write has consumed the bytes
+        finally:
+            self.stopping.set()
+
+    def acquire(self, size):
+        if self.error is not None:
+            raise self.error
+        require(not self.stopping.is_set(), 'Encoder writer stopped')
+        if self.pool is None:
+            self.pool = _FramePool(size, OUTPUT_POOL_BUDGET)
+        if self.pool.size != size:
+            return bytearray(size)
+        buf = self.pool.acquire(self.stopping)
+        require(buf is not None, 'Encoder writer stopped')
+        return buf
 
     def write(self, buf):
         if self.error is not None:
             raise self.error
+        if self.pool is not None:
+            self.pool.submitted(buf)
         self.items.put(buf)
 
     def finish(self):
@@ -637,10 +717,16 @@ class Reader:
     """Sequential decoder; permits repeated indices, refuses backwards reads.
 
     start skips earlier frames: by seeking halfway between frames start-1 and start when fps is
-    given (probe found every frame on the n/fps grid), otherwise by decoded frame number."""
-    def __init__(self, path, size, color=None, start=0, fps=None):
+    given (probe found every frame on the n/fps grid), otherwise by decoded frame number.
+    recycle=True is an internal merge opt-in: raw storage may recycle on advance,
+    while returned BGR arrays remain owned. Default/RGB/oversize paths do not recycle.
+    """
+    def __init__(self, path, size, color=None, start=0, fps=None, recycle=False):
         self.w, self.h = checked_size(size)
         self.color = color or stream_color(path)
+        pool = _FramePool(self.w*self.h*3, RAW_POOL_BUDGET) if recycle and not self.color['rgb_input'] else None
+        self._raw_pool = pool if pool is not None and pool.limit else None
+        self._raw_buffer = None
         self.log = tempfile.TemporaryFile()
         fmt = 'bgr24' if self.color['rgb_input'] else 'yuv444p'
         # State the range on both sides: older FFmpeg (e.g. 6.1) otherwise squeezes full-range
@@ -673,7 +759,10 @@ class Reader:
     def _read_ahead(self):
         try:
             while not self.stopping.is_set():
-                blocks = bytearray(self.w*self.h*3)
+                blocks = (self._raw_pool.acquire(self.stopping) if self._raw_pool is not None
+                          else bytearray(self.w*self.h*3))
+                if blocks is None:
+                    break
                 view, done = memoryview(blocks), 0
                 while done < len(blocks):
                     n = self.p.stdout.readinto(view[done:])
@@ -699,10 +788,16 @@ class Reader:
         """Read up to index; raw planes are kept, BGR conversion happens on demand."""
         require(index >= self.index, 'Non-monotone mapping is unsupported')
         while self.index < index:
+            if self._raw_pool is not None and self._raw_buffer is not None:
+                previous, self._raw_buffer = self._raw_buffer, None
+                self.raw, self.last = None, None
+                self._raw_pool.release(previous)
             blocks = self.frames.get() if self.thread.is_alive() or not self.frames.empty() else None
             if blocks is None:
                 self.thread.join()
                 raise ValueError(f'Decoder ended before frame {index}')
+            if self._raw_pool is not None:
+                self._raw_buffer = blocks
             if self.color['rgb_input']:
                 self.raw = np.frombuffer(blocks, np.uint8).reshape(self.h, self.w, 3)
             else:
@@ -725,12 +820,18 @@ class Reader:
             return self.raw[y:y+h, x:x+w].copy()
         return yuv_to_bgr(*(c[y:y+h, x:x+w] for c in self.raw), self.color)
 
-    def passthrough420(self, index):
-        """Output buffer and Y/U/V views holding this frame without an RGB round trip."""
+    def passthrough420(self, index, buffer=None):
+        """Output buffer and Y/U/V views; optional writable buffer is caller-owned."""
         self.advance(index)
+        require(buffer is None or (isinstance(buffer, bytearray) and len(buffer) == self.w*self.h*3//2),
+                'Invalid output frame buffer')
         if self.color['rgb_input']:
-            return planes420(bgr_to_yuv420(self.raw, self.color), self.w, self.h)
-        buf, Y, U, V = planes420(bytearray(self.w*self.h*3//2), self.w, self.h)
+            converted = bgr_to_yuv420(self.raw, self.color)
+            if buffer is not None:
+                buffer[:] = converted
+                converted = buffer
+            return planes420(converted, self.w, self.h)
+        buf, Y, U, V = planes420(buffer if buffer is not None else bytearray(self.w*self.h*3//2), self.w, self.h)
         y, u, v = self.raw
         k = kernels()
         def work(a, b):
@@ -1171,7 +1272,7 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
     with contextlib.ExitStack() as stack:
         start = plan['first'] if mode == 'prepare' else (span or (0,))[0]
         grid = lambda i: i['fps'] if i.get('on_frame_grid') else None
-        source = Reader(cfg['source'], info['size'], info['color'], start, grid(info))
+        source = Reader(cfg['source'], info['size'], info['color'], start, grid(info), recycle=mode=='merge')
         stack.callback(source.close)
         if mode == 'prepare':
             p = cfg['prepare']; size = plan['size']
@@ -1190,7 +1291,7 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                     readers.append(None)
                     continue
                 readers.append(Reader(p['generated'], q['info']['size'], q['info']['color'],
-                                      min(used, default=0), grid(q['info'])))
+                                      min(used, default=0), grid(q['info']), recycle=True))
                 stack.callback(readers[-1].close)
             af = None if span is None else trimmed_audio(first, last, Fraction(info['fps']))
             cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], af,
@@ -1219,7 +1320,8 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                         if j is not None:
                             active.append((p,q,reader,j,rectangle(p['crop'], i, size)))
                     # Pixels outside every patch support go out as decoded, without an RGB round trip.
-                    frame, Y, U, V = source.passthrough420(i)
+                    buffer = None if source.color['rgb_input'] else out_frames.acquire(size[0]*size[1]*3//2)
+                    frame, Y, U, V = source.passthrough420(i, buffer)
                     # Patches far apart are converted in separate even-aligned boxes (not one union box),
                     # so chroma blocks touching a patch are still recomputed whole.
                     for members, (x0, y0, x1, y1) in chroma_groups(active):
