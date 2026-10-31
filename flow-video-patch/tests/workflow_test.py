@@ -260,6 +260,9 @@ class Workflow(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'confirmation'):
             self.set(record, 'full_scene_and_closeup_normal_speed_playback', 'pass', evidence=[ev],
                      intervals=['16:32'], reviewer='user')
+        with self.assertRaisesRegex(ValueError, 'intervals'):
+            self.set(record, 'full_scene_and_closeup_normal_speed_playback', 'pass', evidence=[ev],
+                     reviewer='user', confirmation='"fine" (user, chat, 2026-10-31 16:02)')
         with self.assertRaisesRegex(ValueError, 'outside'):
             self.set(record, 'all_repair_frames_contact_sheets', 'pass', evidence=[ev], intervals=['16:99'])
         data = json.loads(record.read_text(encoding='utf-8')); data['output_sha256'] = '0'*64

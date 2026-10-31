@@ -30,7 +30,7 @@ description: Prepare masked video clips for Flow and composite returned patches 
 - 返回片疑似变速、遮罩透出旧脸、头周暗圈、高位深偏色或清晰度不协调：读[高级合成诊断](references/advanced-compositing.md)。它提供检查方法，不扩大主脚本能力或工具授权。
 - 收到 Flow 返回片、需要更高清晰度、10bit 源片或返回片缺帧/残留色块：读[实片经验](references/field-lessons.md)，用 `scripts/qc_tools.py` 做认段、帧数、偏移、残色、成片尺度清晰度核对。
 - 补眼/去斜视、跟踪裁切发"跳"、给高清化选取景、返回片改了画幅或表情、两次独立生成叠加（高清底板+局部补丁）、超高分辨率底版（如4倍放大、10位）、高清竖条贴回静态底图：读[实片经验二](references/hd-relay-lessons.md)。
-- 收到任何生成返回片、准备合成前，或用户问"能不能贴回去／要不要重刷"、接缝放哪里、话筒和手用哪边：先运行 `python scripts/qc_tools.py precheck --config merge.json --patch N`（自动给出规格、映射、整体几何、残差、颜色、画布空洞、接缝分数及初步结论），再按[返回片贴合度预检与接缝选位](references/return-fit-assessment.md)补齐眨眼、表情等人工项后决定路线。生成片身体也复刻到位时优先整人贴回。
+- 收到任何生成返回片、准备合成前，或用户问"能不能贴回去／要不要重刷"、接缝放哪里、话筒和手用哪边：先运行 `python scripts/qc_tools.py precheck --config merge.json --patch N --brief`（自动给出规格、映射、整体几何、残差、颜色、画布空洞、接缝分数及初步结论），再按[返回片贴合度预检与接缝选位](references/return-fit-assessment.md)补齐眨眼、表情等人工项后决定路线。生成片身体也复刻到位时优先整人贴回。
 - 合成与验收交付：每个任务第一次合成前读一次 [检查与限制](references/verification.md)（同一任务的后续迭代不必重读，规则或包版本变化时再读），完成其中的融合性与匹配性检查，并在 `merge` 自动生成的 `*.visual-review.json`（按[视觉验收记录模板](assets/visual-review-template.json)预填了哈希、帧数、自动校验等字段，其余仍为 not_run）上记录实际检查。自动检查通过和视觉验收通过分别报告。
 
 - 多人头发交界、邻人衣袖上的旧手指残影、扣子／饰物连续性、只借耳部等局部素材、计算边界硬线：读[多人交界与局部借用](references/overlap-and-local-donors.md)，先分清原返回与合成引入的问题；不照搬个别镜头参数。

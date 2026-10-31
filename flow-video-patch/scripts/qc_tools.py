@@ -477,6 +477,9 @@ def cmd_review_set(a):
         fp.require(a.evidence, f'{a.status} needs at least one --evidence file')
     if a.status == 'not_applicable':
         fp.require(a.note and a.note.strip(), 'not_applicable needs --note with the reason')
+    if a.reviewer == 'user' and a.status in ('pass', 'fail'):
+        fp.require(a.intervals, '--reviewer user needs --intervals: the confirmation is bound to this check, '
+                   'these source frames and the current output hash')
     if a.reviewer == 'user' and a.status != 'not_run':
         fp.require(a.confirmation and a.confirmation.strip(),
                    '--reviewer user needs --confirmation: where the user confirmed it (quoted message with time, or '

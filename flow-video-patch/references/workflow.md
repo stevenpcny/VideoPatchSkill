@@ -63,7 +63,7 @@ python scripts/fit_patch.py --config "merge.json" --patch 0 --output "merge-prop
 - 大幅遮挡、人物交叉、头发超出裁切：重新裁切、逐帧细遮罩如需另用跟踪/合成工具，先停止该步骤，完成白名单扩展核查并获用户明确批准；本包基础几何不解决所有遮挡。
 
 ```bash
-python scripts/qc_tools.py precheck --config "merge-proposed.json" --patch 0
+python scripts/qc_tools.py precheck --config "merge-proposed.json" --patch 0 --brief
 python scripts/flow_patch.py merge --config "merge-proposed.json" --output "check.mp4" --frames 40:80 --preview
 python scripts/flow_patch.py merge --config "merge-proposed.json" --output "patched.mp4"
 ```
