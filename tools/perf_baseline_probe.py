@@ -82,10 +82,14 @@ def main():
     mismatch = [name for name, sha in manifest.items()
                 if hashlib.sha256((skill / name).read_bytes()).hexdigest() != sha]
     assert not mismatch, mismatch
-    report = dict(schema_version=1, package_version='2.9',
-                  baseline_commit='401f8dadef2382d98e8a653dde2aa4a069f1310c',
+    manifest_sha = hashlib.sha256((skill/'SHA256SUMS.json').read_bytes()).hexdigest()
+    reference_sha = 'ca7e278408eba4db53ea1b7110f95dc820b51b8664f48dc0ecf5cb4e331a137e'
+    policy = json.loads((skill/'TOOL_POLICY.json').read_text(encoding='utf-8'))
+    report = dict(schema_version=2, package_version=policy['package_version'],
+                  reference_baseline_commit='401f8dadef2382d98e8a653dde2aa4a069f1310c',
+                  matches_reference_manifest=manifest_sha == reference_sha,
                   manifest_entries_verified=len(manifest),
-                  package_manifest_sha256=hashlib.sha256((skill/'SHA256SUMS.json').read_bytes()).hexdigest(),
+                  package_manifest_sha256=manifest_sha,
                   environment=dict(os=platform.system(), python=platform.python_version(),
                                    numpy=importlib.metadata.version('numpy'),
                                    opencv=fp.opencv_distribution(),
