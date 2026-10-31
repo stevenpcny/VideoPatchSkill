@@ -227,7 +227,8 @@ class Smoke(unittest.TestCase):
         out=cli('merge','--config',cfg,'--output',part,'--frames','6:18','--preview').stdout
         self.assertIn('not deliverable',out)
         rpt=json.loads(part.with_suffix('.report.json').read_text(encoding='utf-8'))
-        self.assertEqual(rpt['scope'],{'frames':[6,18],'preview_encode':True,'deliverable':False})
+        self.assertEqual(rpt['scope'],{'frames':[6,18],'preview_encode':True,'deliverable':False,
+                                     'per_frame_checks':'exported frames only; a full export checks every patch frame'})
         self.assertTrue(rpt['visual_review'].startswith('not deliverable'))
         self.assertIn('ultrafast',rpt['command_argv'])
         info=fp.probe(part)
@@ -528,6 +529,30 @@ class Smoke(unittest.TestCase):
             fp.Reader=original
         before,after=image(self.source,6),image(self.base/'unused-reader-0.mp4',6)
         self.assertGreater(np.mean(abs(after[30:60,30:65].astype(float)-before[30:60,30:65])),20)
+
+    def test_26_check_export_checks_only_its_frames(self):
+        # From PR #17. Keyframed affine that leaves holes in the patch support from frame 20 on.
+        shift=[dict(frame=0,value=[1,0,0,0,1,0]),dict(frame=19,value=[1,0,0,0,1,0]),
+               dict(frame=20,value=[1,0,40,0,1,0])]
+        cfg=self.config('span-check',patches=[self.patch(source_to_generated_affine=shift)])
+        cli('merge','--config',cfg,'--output',self.base/'span-ok.mp4','--frames','2:8','--preview')
+        late=cli('merge','--config',cfg,'--output',self.base/'span-late.mp4','--frames','18:22','--preview',ok=False)
+        self.assertIn('source frame 20',late.stderr)
+        # Deliverable and dry runs still check every patched frame, also a dry run given --frames.
+        full=cli('merge','--config',cfg,'--output',self.base/'span-full.mp4',ok=False)
+        self.assertIn('source frame 20',full.stderr)
+        for extra in ((),('--frames','2:8')):
+            self.assertIn('source frame 20',cli('merge','--config',cfg,'--output',self.base/'span-dry.mp4',
+                                                '--dry-run',*extra,ok=False).stderr)
+        # A patch entirely outside the span still has its first frame checked.
+        broken=self.patch(target=[12,24],frame_map=list(range(12)),crop=[96,0,96,128],
+                          source_to_generated_affine=[1,0,40,0,1,0])
+        cfg=self.config('span-outside',patches=[self.patch(target=[0,12],frame_map=list(range(12))),broken])
+        self.assertIn('source frame 12',cli('merge','--config',cfg,'--output',self.base/'span-out.mp4',
+                                            '--frames','2:8','--preview',ok=False).stderr)
+        # The interval is checked before any plan work.
+        self.assertIn('Invalid --frames',cli('merge','--config',cfg,'--output',self.base/'span-bad.mp4',
+                                             '--frames','20:30',ok=False).stderr)
 
 
 if __name__=='__main__':

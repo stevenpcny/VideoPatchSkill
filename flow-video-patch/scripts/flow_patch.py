@@ -870,7 +870,10 @@ def prepare_plan(cfg, info):
             'core_in_upload': [start-first, end-first], 'audio': info['audio']}
 
 
-def merge_plan(cfg, info):
+def merge_plan(cfg, info, span=None):
+    """span=(first,last): a check-only export checks per-frame crop, matte and affine holes only on
+    the frames it renders (a patch outside it still gets its first frame checked, so a malformed
+    matte or blend is refused anyway). Deliverables and dry runs pass no span and check every frame."""
     require(len(cfg['patches']) > 0, 'No patches')
     plans = []
     for p in cfg['patches']:
@@ -895,10 +898,14 @@ def merge_plan(cfg, info):
             require(fade_in <= len(indices)//2, 'Invalid fade_frames')
         affine_spec = p.get('source_to_generated_affine', [1,0,0,0,1,0])
         static = static_matte(p['matte']) and not keyframed(affine_spec)
-        for i in range(*p['target']):
+        first, last = p['target']
+        if span is not None:
+            first, last = (max(first, span[0]), min(last, span[1])) if first < span[1] and span[0] < last \
+                else (first, first+1)
+        for i in range(first, last):
             crop = rectangle(p['crop'], i, info['size'])
             require(abs((crop[2]/crop[3])/(size[0]/size[1])-1) < 0.005, 'Crop/work aspect mismatch')
-            if static and i > p['target'][0]:
+            if static and i > first:
                 continue  # Same matte and affine on every frame: the first check covers them all.
             m = matte(p['matte'], i, size)
             affine = curve(affine_spec, i).reshape(2,3)
@@ -908,7 +915,7 @@ def merge_plan(cfg, info):
                                    borderMode=cv2.BORDER_CONSTANT)
             require(not np.any((m > 0) & (valid < .999)),
                     f'Affine leaves holes inside patch support at source frame {i}; shrink mask/review')
-            if i == p['target'][0]:
+            if i == first:
                 blend(np.zeros((size[1],size[0],3),np.uint8),
                       np.zeros((size[1],size[0],3),np.uint8), m, p.get('blend','alpha'), p.get('levels',5))
         plans.append({'info': gi, 'indices': indices})
@@ -1559,10 +1566,12 @@ def main():
     cache = None if deliverable and not args.dry_run else output_path(args.output).parent/'.flow-probe-cache'
     prefetch_probes([cfg['source'], *(p['generated'] for p in cfg.get('patches', []))], cache)
     info = validate_source(cfg)
-    plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info)
     require(not (args.copy_unpatched and span), '--copy-unpatched applies to full merges, not --frames')
     require(span is None or 0 <= span[0] < span[1] <= info['frames'],
             'Invalid --frames interval for this source')
+    # A dry run is a full plan check, with or without --frames.
+    checked = None if args.dry_run else span
+    plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info,checked)
     notices = output_notices(info, args.mode)
     if hardware:
         notices.append(f'Video encoder {video_encoder()} (hardware); compare quality with libx264 '
@@ -1618,6 +1627,8 @@ def main():
         if args.mode == 'merge':
             result['scope'] = {'frames': list(span) if span else [0, info['frames']],
                                'preview_encode': args.preview, 'deliverable': deliverable}
+            if span:
+                result['scope']['per_frame_checks'] = 'exported frames only; a full export checks every patch frame'
         if not deliverable:
             result['visual_review'] = ('not deliverable: partial/preview export for checking only; '
                                        'final acceptance must use a full export without --frames/--preview')
