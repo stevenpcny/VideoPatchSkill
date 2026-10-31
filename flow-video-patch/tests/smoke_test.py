@@ -554,6 +554,27 @@ class Smoke(unittest.TestCase):
         self.assertIn('Invalid --frames',cli('merge','--config',cfg,'--output',self.base/'span-bad.mp4',
                                              '--frames','20:30',ok=False).stderr)
 
+    def test_27_copy_unpatched_with_nothing_to_copy_renders_directly(self):
+        # Patch frames in all four 12-frame GOPs: no cutting or joining, a plain full render instead.
+        src=self.gop_source('gop-allpatched.mp4')
+        p=self.patch(generated=str(self.generated),target=[6,29],frame_map=list(range(23)),crop=[0,0,96,128],protect=None)
+        q=self.patch(generated=str(self.generated),target=[40,44],frame_map=list(range(4)),crop=[96,0,96,128],protect=None)
+        cfg=self.config('gop-allpatched',source=str(src),source_size=[192,128],patches=[p,q])
+        out,plain=self.base/'gop-allpatched-out.mp4',self.base/'gop-allpatched-plain.mp4'
+        env=dict(os.environ,FLOW_SEGMENTS='1')
+        r=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),'--output',str(out),
+                          '--copy-unpatched'],capture_output=True,text=True,encoding='utf-8',env=env)
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIn('--copy-unpatched not used (every source GOP holds a patch frame',r.stderr)
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
+        self.assertEqual(rpt['copy_unpatched'],{'used':False})
+        self.assertNotIn('copy_argv',rpt['command_argv'])
+        # Exactly the output of the same merge without --copy-unpatched.
+        subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),'--output',str(plain)],
+                       check=True,capture_output=True,env=env)
+        self.assertEqual(fp.decode_pass(out)[1],fp.decode_pass(plain)[1])
+        self.assertEqual(fp.audio_hash(src),fp.audio_hash(out))
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
