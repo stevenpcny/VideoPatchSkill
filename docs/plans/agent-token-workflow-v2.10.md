@@ -8,11 +8,11 @@
 
 | 对象 | 提交 | 用途 |
 |---|---|---|
-| main | `401f8dadef2382d98e8a653dde2aa4a069f1310c`（v2.9） | 本 PR 的合并基线 |
-| **最新技能（评估对象）** | `8b7525d07e669f52d9f31840e15bd99a4048c0c6`（[PR #20](https://github.com/stevenpcny/VideoPatchSkill/pull/20) head = main + 7 个性能提交） | 所有测量和源码引用都基于它 |
-| [PR #19](https://github.com/stevenpcny/VideoPatchSkill/pull/19) | 性能与质量 PLAN | 本文不重复其计算性能项；本文把 #19 的 P6"工作流维护：减少手工重复工作"展开成可执行方案 |
+| **main（评估对象与合并基线）** | `8915d8620842ac84fad5723f2d543ff3cf661351`（[#19](https://github.com/stevenpcny/VideoPatchSkill/pull/19)、[#20](https://github.com/stevenpcny/VideoPatchSkill/pull/20) 已合并） | 修订 2 起的基线；本 PR 已 rebase 到此 |
+| 首次测量 | `8b7525d07e669f52d9f31840e15bd99a4048c0c6`（#20 合并前的 head） | 第一版与修订 1 的测量对象 |
+| [PR #19](https://github.com/stevenpcny/VideoPatchSkill/pull/19) | 性能与质量 PLAN（已合并） | 本文不重复其计算性能项；本文把 #19 的 P6"工作流维护：减少手工重复工作"展开成可执行方案 |
 
-PR #20 与 main 的文档差别只有 `references/parameters.md` 一段（`--frames` 只核对区间内的帧），对下文文档估算的影响约 115 token。
+**修订 2（#20 合并后复测）**：main 相对 `8b7525d` 只改了 CHANGELOG、`flow_patch.py`（撤回零复制短路 53bd1c6）与 smoke 测试，技能阅读路径不变。在 main 上重跑：文档估算三场景仍为 37,783／26,498／54,240；fixture 的全部媒体产物（源片、上传片、检查片、成片）SHA-256 与 `8b7525d` 相同，precheck、seam 的 stdout 逐字节相同，JSON 报告与 dry-run 输出只差在其中绝对输出目录路径的长度。下文数字因此不变，两次完整记录都在证据文件中（`fixture_record`、`fixture_record_main`）。
 
 #19／#20 优化的是**机器时间**（解码次数、转换面积、读取器）。本文优化的是另一种成本：**智能体读文档、读输出、写临时代码、手填 JSON、重建状态所花的 token，以及人和智能体之间的来回轮次**。两者互不替代。
 
@@ -28,7 +28,7 @@ PR #20 与 main 的文档差别只有 `references/parameters.md` 一段（`--fra
    - **状态重建**：多轮修补中上下文压缩或换会话后，智能体要重读 SKILL.md、配置和报告才能知道"做到哪一步、哪些检查已作废"。
 3. 提案共 16 项，分四类：文档路由（D）、只读工具输出（T）、新增证据与记录工具（E）、配置能力（C），外加 4 条操作约定（P）。**全部不放宽白名单、不放宽"状态如实报告"、不把自动证据升级为视觉通过、不改变已有配置的合成输出**。少数涉及阅读规则或审批边界的项单独列为待上游决定（第 10 节）。
 4. 粗估合计：同类任务的非图片 token 有望下降约 60–70%，其中输出 token 下降比例更高；图片审看量由验收规则决定，本提案不减少应看的帧，只减少重复和无效的看图。**这是目标估算，须按第 8 节实测；合成复验不能证明真实会话收益或实片视觉质量。**
-5. 首批实施（修订 1）：T1／T2（冗长输出）与带阻断条件的 C1／E4（待配置状态、验收门槛写进文件）。
+5. 首批实施（修订 1）：T1／T2（冗长输出）与带阻断条件的 C1／E4（待配置状态、验收门槛写进文件）。其依赖"#20 合并后的 main"已满足（修订 2）。
 
 ---
 
@@ -78,7 +78,7 @@ PR #20 与 main 的文档差别只有 `references/parameters.md` 一段（`--fra
 
 可复验：`python tools/token_fixture.py --out 新空目录 --package 被测的flow-video-patch目录 --json record.json`。脚本生成合成素材、写出完整的 prepare／merge 配置（含 matte、源片编码参数）、依次运行全部命令，逐条记录 argv、退出码、耗时、stdout 与 stderr 分列的字节数和 SHA-256、全部产物的字节数和 SHA-256，以及被测提交、包清单摘要、Python／NumPy／OpenCV／FFmpeg 版本、平台和全部 `FLOW_*` 环境变量。完整记录在[证据文件](evidence/agent-token-baseline.json)的 `fixture_record`。
 
-本机环境：Linux 容器，Python 3.13.18，NumPy 2.5.3，opencv-python-headless 5.0.0，FFmpeg 6.1.1，NumPy 内核，被测提交 `8b7525d`。素材：testsrc2 1280×720、24 fps、240 帧加正弦 AAC（libx264 medium CRF 18，GOP 48）；prepare 核心 `[48,144)`、参照 24 帧、裁切 360×640，把上传片当作自身返回片（恒等），matte 椭圆 `[60,40,240,300]`、feather 20。业主在 Windows（FFmpeg 9.0.2，matte 矩形 `[80,100,180,250]`）的复验列在最后一栏；配置和平台不同，不要求字节数一致。
+本机环境：Linux 容器，Python 3.13.18，NumPy 2.5.3，opencv-python-headless 5.0.0，FFmpeg 6.1.1，NumPy 内核，被测提交 `8b7525d`，并在 main `8915d86` 复测（媒体产物与 QC 输出相同）。素材：testsrc2 1280×720、24 fps、240 帧加正弦 AAC（libx264 medium CRF 18，GOP 48）；prepare 核心 `[48,144)`、参照 24 帧、裁切 360×640，把上传片当作自身返回片（恒等），matte 椭圆 `[60,40,240,300]`、feather 20。业主在 Windows（FFmpeg 9.0.2，matte 矩形 `[80,100,180,250]`）的复验列在最后一栏；配置和平台不同，不要求字节数一致。
 
 | 命令 | stdout 字节（fixture） | 约合 token | 业主复验 | 备注 |
 |---|---:|---:|---:|---|
@@ -387,7 +387,7 @@ SKILL.md 与 AGENT_ENTRY.md 不写版本说明、日期等每版都变的文字�
 | 批次 | 内容 | 依赖 | 影响面 | 退出条件 |
 |---|---|---|---|---|
 | W0 | 本 PR：`tools/token_budget.py`、`tools/token_fixture.py`、基线证据、本计划；真实会话测量协议（第 8 节） | 无 | 仅新增文档与只读工具 | 上游确认测量协议与第 10 节问题 |
-| **W1（首批，修订 1）** | **T1、T2，带阻断条件的 C1（matte pending、timing unverified）与 E4（整体状态门槛、用户确认依据）** | W0；#20 合并后的 main | 只读输出 + 新命令／新字段 + 记录工具 | T1／T2 输出等价性；C1、E4 第 5 节全部负例；已有配置成片逐字节不变 |
+| **W1（首批，修订 1）** | **T1、T2，带阻断条件的 C1（matte pending、timing unverified）与 E4（整体状态门槛、用户确认依据）** | W0；main `8915d86`（#20 已合并，依赖已满足） | 只读输出 + 新命令／新字段 + 记录工具 | T1／T2 输出等价性；C1、E4 第 5 节全部负例；已有配置成片逐字节不变 |
 | W2 | D1–D5、P1–P4、`tests/doc_rules_test.py`、`docs/plans/rule-map.json` | W0；可与 W1 并行 | 仅文档 + 测试 | 规则保全 100%；token_budget 前后对比；三平台 CI 绿 |
 | W3 | T3、T4（含依赖指纹） | W1 | 只读命令 + 报告新增字段 | T4 全部负例；旧报告判 unknown；成片哈希不变 |
 | W4 | E1、E2（分段映射）、E3 | W1（E4 记录格式）、W3（指纹） | 只读媒体 + 新证据文件 | 第 5.3 节各项验收；E2 歧义用例 |
@@ -396,7 +396,7 @@ SKILL.md 与 AGENT_ENTRY.md 不写版本说明、日期等每版都变的文字�
 
 各批次独立 PR、可单独回退。按业主复验建议，首批为 T1／T2 与带阻断条件的 C1／E4：T1／T2 已复现的冗长输出收益最直接；C1、E4 的阻断条件把"待配置"与"不可通过"写进文件，能在压缩或换会话后仍然生效。文档路由（W2）可并行。E1 第 6 项视 #18 闪变调查需要可提前。
 
-与 #19／#20 的协调：W2–W4 改动 `qc_tools.py`、`flow_patch.py` 的命令行层，应在 #20 合并后基于新 main 开发，复用 #20 的单次解码与共享探测（E1 的顺序读取与 precheck 的单遍读取同一模式）。
+与 #19／#20 的协调：实施批次改动 `qc_tools.py`、`flow_patch.py` 的命令行层，基于已合并 #20 的 main 开发，复用其单次解码与共享探测（E1 的顺序读取与 precheck 的单遍读取同一模式）。注意 #20 合并时撤回了零复制短路（53bd1c6，见 `docs/plans/pr20-review.md`），T1 的 `--brief` 不得改变 `--copy-unpatched` 的回退判断与编码参数。
 
 ---
 
@@ -431,7 +431,7 @@ SKILL.md 与 AGENT_ENTRY.md 不写版本说明、日期等每版都变的文字�
 | status 作废检测漏判 | 只依据 SHA-256，不依据修改时间；测试覆盖替换文件、改配置、重导出 |
 | init-merge 掩盖时间映射问题 | 返回片不足即拒绝；不写 frame_map；timemap 证据独立 |
 | matte.sequence 引入错位遮罩 | 尺寸、帧数、灰度校验；报告记录遮罩哈希；与包装方式逐字节比对 |
-| 与 #20 冲突 | W2–W4 在 #20 合并后开发；W1 只动文档 |
+| 与 #20 冲突 | #20 已合并，各批次基于新 main 开发；本 PR 已 rebase |
 
 每批独立 PR，回退即 revert 对应 PR，不影响其他批次与已有配置。
 
@@ -473,4 +473,10 @@ SKILL.md 与 AGENT_ENTRY.md 不写版本说明、日期等每版都变的文字�
 | 首批先做 T1／T2 与带阻断条件的 C1／E4 | 批次表调整，首批 W1 即此四项 | 第 7 节 |
 | 60–70% 属于目标估算 | 第 6 节标题与结论摘要明确为目标估算，以第 8 节 A/B 为准 | 第 1、6 节 |
 | 补充可运行的完整 fixture 脚本与具体配置，记录提交、环境、命令、stdout／stderr 分列及产物哈希 | 新增 `tools/token_fixture.py`；证据文件改为 `fixture_record`，并保留首次临时测量与业主复验数字以便追溯 | 2.2 节、证据文件 |
+
+### 修订 2：#19、#20 合并后
+
+- 分支 rebase 到 main `8915d86`，无冲突。
+- 在 main 上用 `tools/token_fixture.py` 与 `tools/token_budget.py` 重跑，结果见本文开头的基线说明；数字不变，证据文件新增 `fixture_record_main`。
+- 首批 W1 的依赖（#20 合并）已满足；W1 须保持 #20 合并时撤回零复制短路后的 `--copy-unpatched` 行为。
 

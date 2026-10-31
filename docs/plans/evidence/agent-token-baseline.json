@@ -1,11 +1,11 @@
 {
   "baseline": {
-    "main": "401f8dadef2382d98e8a653dde2aa4a069f1310c",
-    "latest_skill_measured": "8b7525d07e669f52d9f31840e15bd99a4048c0c6 (PR #20 head = main + 7 performance commits)",
-    "doc_difference_main_vs_measured": "references/parameters.md one paragraph; estimates differ by ~115 tokens"
+    "main": "8915d8620842ac84fad5723f2d543ff3cf661351 (after #19 and #20 merged)",
+    "first_measured": "8b7525d07e669f52d9f31840e15bd99a4048c0c6 (PR #20 head, before merge)",
+    "main_vs_first_measured": "Skill reading paths unchanged (only CHANGELOG.md and flow_patch.py/smoke tests changed: zero-copy short-circuit withdrawn). Document estimates identical (37783/26498/54240). Fixture media artifacts byte-identical; precheck/seam stdout identical; JSON reports and dry-run output differ only by the length of the absolute output directory path."
   },
   "how_to_reproduce": {
-    "documentation": "git worktree add ../measured 8b7525d && cp tools/token_budget.py ../measured/tools/ && (cd ../measured && python tools/token_budget.py --json doc.json)",
+    "documentation": "git worktree add ../measured origin/main && cp tools/token_budget.py ../measured/tools/ && (cd ../measured && python tools/token_budget.py --json doc.json)",
     "commands": "python tools/token_fixture.py --out NEW_EMPTY_DIR --package ../measured/flow-video-patch --json record.json"
   },
   "documentation": {
@@ -480,5 +480,395 @@
       54240
     ]
   },
-  "limits": "Static estimates and byte counts on synthetic media only. No real agent session transcripts were measured; no claim about real-task token totals or quality."
+  "limits": "Static estimates and byte counts on synthetic media only. No real agent session transcripts were measured; no claim about real-task token totals or quality.",
+  "fixture_record_main": {
+    "fixture": "tools/token_fixture.py",
+    "environment": {
+      "package_commit": "8915d8620842ac84fad5723f2d543ff3cf661351",
+      "package_sha256sums_digest": "2e61275ebd06077938f04e7140428d712810074587e2eae491a9b85d3a0e4415",
+      "platform": "Linux-6.18.44-fc-v185-x86_64-with-glibc2.39",
+      "python": "3.13.18",
+      "numpy": "2.5.3",
+      "opencv": "5.0.0",
+      "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+      "ffprobe": "ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers",
+      "flow_env": {}
+    },
+    "configs": {
+      "prepare.json": {
+        "schema_version": 1,
+        "source": "source.mp4",
+        "source_size": [
+          1280,
+          720
+        ],
+        "fps": 24,
+        "prepare": {
+          "core": [
+            48,
+            144
+          ],
+          "context_frames": 24,
+          "crop": [
+            800,
+            40,
+            360,
+            640
+          ],
+          "output_size": [
+            360,
+            640
+          ],
+          "mask_regions": [
+            [
+              100,
+              80,
+              160,
+              200
+            ]
+          ],
+          "color_rgb": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "merge.json": {
+        "schema_version": 1,
+        "source": "source.mp4",
+        "source_size": [
+          1280,
+          720
+        ],
+        "fps": 24,
+        "patches": [
+          {
+            "name": "a",
+            "generated": "upload.mp4",
+            "target": [
+              48,
+              144
+            ],
+            "generated_start": 24,
+            "crop": [
+              800,
+              40,
+              360,
+              640
+            ],
+            "work_size": [
+              360,
+              640
+            ],
+            "source_to_generated_affine": [
+              1,
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "matte": {
+              "region": [
+                60,
+                40,
+                240,
+                300
+              ],
+              "shape": "ellipse",
+              "feather": 20,
+              "protect": []
+            },
+            "blend": "alpha",
+            "fade_frames": 0,
+            "gain_bgr": [
+              1,
+              1,
+              1
+            ],
+            "offset_bgr": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      }
+    },
+    "commands": [
+      {
+        "name": "source",
+        "argv": [
+          "ffmpeg",
+          "-nostdin",
+          "-v",
+          "error",
+          "-n",
+          "-f",
+          "lavfi",
+          "-i",
+          "testsrc2=size=1280x720:rate=24:duration=10",
+          "-f",
+          "lavfi",
+          "-i",
+          "sine=frequency=440:sample_rate=48000:duration=10",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "medium",
+          "-crf",
+          "18",
+          "-pix_fmt",
+          "yuv420p",
+          "-g",
+          "48",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "128k",
+          "-shortest",
+          "source.mp4"
+        ],
+        "exit_code": 0,
+        "wall_s": 5.076,
+        "stdout_bytes": 0,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "doctor",
+        "argv": [
+          "python",
+          "scripts/flow_patch.py",
+          "doctor"
+        ],
+        "exit_code": 0,
+        "wall_s": 0.775,
+        "stdout_bytes": 753,
+        "stdout_sha256": "f46eecfe6f1e362ab78485017c33377bd1ef816a7629debfdce2867fde93cb2e",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "inspect",
+        "argv": [
+          "python",
+          "scripts/flow_patch.py",
+          "inspect",
+          "--source",
+          "source.mp4"
+        ],
+        "exit_code": 0,
+        "wall_s": 1.038,
+        "stdout_bytes": 450,
+        "stdout_sha256": "7fa03aa0ea705d065757809e91203ceeefcb99b7a4c0a1e9d7278df69e01f6ac",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "prepare_dry_run",
+        "argv": [
+          "python",
+          "scripts/flow_patch.py",
+          "prepare",
+          "--config",
+          "prepare.json",
+          "--output",
+          "upload.mp4",
+          "--dry-run"
+        ],
+        "exit_code": 0,
+        "wall_s": 1.123,
+        "stdout_bytes": 1294,
+        "stdout_sha256": "b3e6daa664d30699aff6cdb0aa5a4284202ab2e8c393eb971e47213382002925",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "prepare",
+        "argv": [
+          "python",
+          "scripts/flow_patch.py",
+          "prepare",
+          "--config",
+          "prepare.json",
+          "--output",
+          "upload.mp4"
+        ],
+        "exit_code": 0,
+        "wall_s": 6.145,
+        "stdout_bytes": 62,
+        "stdout_sha256": "a4129e3134d8c80710b8fe590cc89d78244f98a53d4cc159e1b29f77f2ca8c51",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "merge_dry_run",
+        "argv": [
+          "python",
+          "scripts/flow_patch.py",
+          "merge",
+          "--config",
+          "merge.json",
+          "--output",
+          "patched.mp4",
+          "--dry-run"
+        ],
+        "exit_code": 0,
+        "wall_s": 0.632,
+        "stdout_bytes": 3437,
+        "stdout_sha256": "8e2e2087d68fed402090ad96f3d9f3fb0cda43e2b83422969a7bdbdb456d6145",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "precheck",
+        "argv": [
+          "python",
+          "scripts/qc_tools.py",
+          "precheck",
+          "--config",
+          "merge.json",
+          "--patch",
+          "0"
+        ],
+        "exit_code": 0,
+        "wall_s": 4.207,
+        "stdout_bytes": 3703,
+        "stdout_sha256": "dcdfd89b8ecfb86ceac105419ddb5a8e05956231764f1ac8bb0f2c38f9ff06bc",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "seam",
+        "argv": [
+          "python",
+          "scripts/qc_tools.py",
+          "seam",
+          "--config",
+          "merge.json",
+          "--patch",
+          "0"
+        ],
+        "exit_code": 0,
+        "wall_s": 8.085,
+        "stdout_bytes": 15872,
+        "stdout_sha256": "c383723f91d8eb7effa17440857ed9e7220fdaa90f578976b37710ec93f1db76",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "fit",
+        "argv": [
+          "python",
+          "scripts/fit_patch.py",
+          "--config",
+          "merge.json",
+          "--patch",
+          "0",
+          "--output",
+          "proposed.json"
+        ],
+        "exit_code": 0,
+        "wall_s": 6.768,
+        "stdout_bytes": 41,
+        "stdout_sha256": "ce3becd4f7aa27ec9423a00275c87d023b952123170a5ed01a2ea1c9e4bd0318",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "check_export",
+        "argv": [
+          "python",
+          "scripts/flow_patch.py",
+          "merge",
+          "--config",
+          "merge.json",
+          "--output",
+          "check.mp4",
+          "--frames",
+          "60:90",
+          "--preview"
+        ],
+        "exit_code": 0,
+        "wall_s": 3.047,
+        "stdout_bytes": 90,
+        "stdout_sha256": "27d1ffc5a4608f258295846120ab16eeb54e344ca677e46a33b8dec9774b55cf",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "full_merge",
+        "argv": [
+          "python",
+          "scripts/flow_patch.py",
+          "merge",
+          "--config",
+          "merge.json",
+          "--output",
+          "patched.mp4"
+        ],
+        "exit_code": 0,
+        "wall_s": 11.419,
+        "stdout_bytes": 144,
+        "stdout_sha256": "f3daad4c0c7cc10b34ecd8419e5f999970151df8b0b4a237964616e07d9a00c0",
+        "stderr_bytes": 0,
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "artifacts": {
+      "check.mp4": {
+        "bytes": 1368043,
+        "sha256": "2f5e0ea9aa5f90033f565a0bacfbcd258e6d8d94a719513a50bb785531d4572d"
+      },
+      "check.report.json": {
+        "bytes": 4209,
+        "sha256": "cca09c7d5bcabf098369797c49cd72e2b71f9d326018e6c4ce65d6e14bab05ed"
+      },
+      "merge.json": {
+        "bytes": 871,
+        "sha256": "28bad4894f5d9d56458af5026d64be577f7d8acf918c7d8e635f6adfdb28f882"
+      },
+      "patched.mp4": {
+        "bytes": 5355938,
+        "sha256": "8bcb2225d461a87d45d684d30819b1f6113545e1e72db2a94f92415d6589d86a"
+      },
+      "patched.report.json": {
+        "bytes": 4025,
+        "sha256": "c4514e8021ad419dae00de2c2449815ed3e836f30913c32b6f510ceb690a2364"
+      },
+      "patched.visual-review.json": {
+        "bytes": 7685,
+        "sha256": "778ab63e75758079ff7b37a2e9f2d2d5725af777e3b14c8531fe3fc5be96a9ce"
+      },
+      "prepare.json": {
+        "bytes": 452,
+        "sha256": "b4deb0bfed0192769b29858a5414a353364430467919f1396862046cc80b45c7"
+      },
+      "proposed.json": {
+        "bytes": 46817,
+        "sha256": "34318d311cb65fd44fd685595ab6e052bd74f5b0c2e3cfc9aa4e44b41c1cfb91"
+      },
+      "source.mp4": {
+        "bytes": 5164362,
+        "sha256": "2815fdc95f79836cc82733724ff1c27571a1974c27579f1a7a74277bd2ce54e5"
+      },
+      "upload.mp4": {
+        "bytes": 2689291,
+        "sha256": "d67c30a30b1a86b0084ec6c4a420317d96761245d3eebd30648f95e049a2311f"
+      },
+      "upload.report.json": {
+        "bytes": 3468,
+        "sha256": "64f60d88e421213d5a5122378e1a669c1cab656dbba39951a3803f446f589589"
+      }
+    },
+    "visual_review_prefilled": {
+      "checks_total": 25,
+      "pass": 2,
+      "not_run": 23
+    },
+    "limits": "Synthetic media; byte counts depend on platform and FFmpeg/x264 build. Not a measurement of real agent sessions or visual quality."
+  }
 }
