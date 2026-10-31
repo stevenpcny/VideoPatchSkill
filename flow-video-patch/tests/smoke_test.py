@@ -669,5 +669,48 @@ class Smoke(unittest.TestCase):
         self.assertTrue(np.array_equal(pixels, original))
 
 
+    def test_31_pyramid_workspace_ownership_budget_and_exactness(self):
+        rng = np.random.default_rng(3107)
+        o = rng.integers(0,256,(128,192,3),dtype=np.uint8)
+        p = rng.integers(0,256,o.shape,dtype=np.uint8)
+        m = fp.matte(dict(region=[16,16,160,96],feather=8),0,[192,128])
+        for levels in range(1,7):
+            for fade in (0,.13,.5,1):
+                fp._BLEND_LOCAL.workspace = None
+                with mock.patch.object(fp.PyramidWorkspace,'BUDGET',0):
+                    ref = fp.blend(o,p,m*fade,'multiband',levels)
+                fp._BLEND_LOCAL.workspace = None
+                actual = fp.blend(o,p,m*fade,'multiband',levels)
+                saved = actual.copy()
+                self.assertTrue(np.array_equal(actual,ref),(levels,fade))
+                fp.blend(p,o,m*(1-fade),'multiband',levels)
+                self.assertTrue(np.array_equal(actual,saved),'a later frame mutated prior output')
+                self.assertLessEqual(fp._BLEND_LOCAL.workspace.bytes,fp.PyramidWorkspace.BUDGET)
+        # A low budget caches only what fits; the other slots retain original allocation.
+        fp._BLEND_LOCAL.workspace = None
+        with mock.patch.object(fp.PyramidWorkspace,'BUDGET',1024):
+            small = fp.blend(o,p,m,'multiband',3)
+            self.assertLessEqual(fp._BLEND_LOCAL.workspace.bytes,1024)
+        self.assertTrue(np.array_equal(small,fp.blend(o,p,m,'multiband',3)))
+        fp._BLEND_LOCAL.workspace = None
+        fp.blend(o,p,m,'alpha',3)
+        self.assertIsNone(fp._BLEND_LOCAL.workspace)
+        # Calls from different Python threads must never share destination arrays.
+        import threading
+        barrier = threading.Barrier(2)
+        def threaded(offset):
+            result = fp.blend(o,p,m*offset,'multiband',3)
+            workspace = fp._BLEND_LOCAL.workspace
+            barrier.wait()
+            return result,workspace
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(2) as pool:
+            first = pool.submit(threaded,.5);second = pool.submit(threaded,1)
+            a,wa=first.result();b,wb=second.result()
+        self.assertIsNot(wa,wb)
+        self.assertTrue(np.array_equal(a,fp.blend(o,p,m*.5,'multiband',3)))
+        self.assertTrue(np.array_equal(b,fp.blend(o,p,m,'multiband',3)))
+
+
 if __name__=='__main__':
     unittest.main(verbosity=2)

@@ -170,7 +170,10 @@ def windows_reader_pipe(popen, argv, args, kwargs):
 def candidate(name):
     """One factor per experiment, scoped to this process and restored on errors."""
     with contextlib.ExitStack() as stack:
-        if name == 'patch_transform':
+        if name.startswith('next:'):
+            import next_perf_experiments
+            stack.enter_context(next_perf_experiments.candidate(name.split(':', 1)[1]))
+        elif name == 'patch_transform':
             old = fp.patch_inputs
             fp.patch_inputs = lut_patch_inputs
             stack.callback(setattr, fp, 'patch_inputs', old)
@@ -178,7 +181,7 @@ def candidate(name):
             old = subprocess.Popen
             def popen(argv, *a, **kw):
                 # Reader's rawvideo decoder only. Never changes encoder/probe checks.
-                if isinstance(argv, list) and argv[0] == fp.FFMPEG and 'rawvideo' in argv and argv[-1] == '-':
+                if isinstance(argv, list) and argv[0] == fp.FFMPEG and 'rawvideo' in argv and argv[-1] == '-' and kw.get('stdout') == subprocess.PIPE:
                     if name == 'pipe_capacity':
                         if sys.platform != 'win32':
                             raise RuntimeError('pipe_capacity is a Windows-only experiment')
