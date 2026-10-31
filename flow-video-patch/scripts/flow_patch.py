@@ -1346,9 +1346,6 @@ def merge_copy_unpatched(cfg, info, plans, out, preset=None):
             pieces[-1][1] = b
         else:
             pieces.append([a, b, render])
-    if all(render for *_, render in pieces):
-        # Nothing to copy: cutting, joining and comparing would only add work to a full render.
-        raise CopyFallback('every source GOP holds a patch frame, so no frame can be copied')
     work = out.parent/'pieces'
     work.mkdir()
     # Hash the source frames while pieces are cut and rendered.
@@ -1636,6 +1633,10 @@ def main():
         count = segment_count(info['frames']) if args.mode == 'merge' and span is None else 1
         if smart is not None:
             plan = plan_used
+            if smart['copied_frames'] == 0:
+                notices.append('--copy-unpatched copied no frames: every source GOP holds a patch frame, '
+                               'so it saved nothing over a full render')
+                print('NOTICE: '+notices[-1], file=sys.stderr)
         elif count > 1:
             plan,cmd = merge_segmented(cfg,info,plan,temp,count,preset)
         else:

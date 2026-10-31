@@ -554,28 +554,7 @@ class Smoke(unittest.TestCase):
         self.assertIn('Invalid --frames',cli('merge','--config',cfg,'--output',self.base/'span-bad.mp4',
                                              '--frames','20:30',ok=False).stderr)
 
-    def test_27_copy_unpatched_with_nothing_to_copy_renders_directly(self):
-        # Patch frames in all four 12-frame GOPs: no cutting or joining, a plain full render instead.
-        src=self.gop_source('gop-allpatched.mp4')
-        p=self.patch(generated=str(self.generated),target=[6,29],frame_map=list(range(23)),crop=[0,0,96,128],protect=None)
-        q=self.patch(generated=str(self.generated),target=[40,44],frame_map=list(range(4)),crop=[96,0,96,128],protect=None)
-        cfg=self.config('gop-allpatched',source=str(src),source_size=[192,128],patches=[p,q])
-        out,plain=self.base/'gop-allpatched-out.mp4',self.base/'gop-allpatched-plain.mp4'
-        env=dict(os.environ,FLOW_SEGMENTS='1')
-        r=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),'--output',str(out),
-                          '--copy-unpatched'],capture_output=True,text=True,encoding='utf-8',env=env)
-        self.assertEqual(r.returncode,0,r.stderr)
-        self.assertIn('--copy-unpatched not used (every source GOP holds a patch frame',r.stderr)
-        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
-        self.assertEqual(rpt['copy_unpatched'],{'used':False})
-        self.assertNotIn('copy_argv',rpt['command_argv'])
-        # Exactly the output of the same merge without --copy-unpatched.
-        subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),'--output',str(plain)],
-                       check=True,capture_output=True,env=env)
-        self.assertEqual(fp.decode_pass(out)[1],fp.decode_pass(plain)[1])
-        self.assertEqual(fp.audio_hash(src),fp.audio_hash(out))
-
-    def test_28_grouped_conversion_matches_one_union_box(self):
+    def test_27_grouped_conversion_matches_one_union_box(self):
         # Patches far apart are converted in separate boxes; adjacent ones sharing a chroma block stay
         # together. Encoder input must equal converting one union box, so outputs are byte-identical.
         g=lambda *crops:[(None,None,None,0,c) for c in crops]
@@ -602,6 +581,26 @@ class Smoke(unittest.TestCase):
             fp.chroma_groups=original
         self.assertEqual(grouped.read_bytes(),joined.read_bytes())
         self.assertGreater(np.mean(abs(image(grouped,6)[20:50,15:40].astype(float)-image(self.source,6)[20:50,15:40])),10)
+
+    def test_28_copy_unpatched_without_copyable_gops_keeps_source_reordering(self):
+        # Every GOP holds a patch frame. The render still follows the source's B-frame reordering
+        # (here none), as it always did; a plain full render would use the encoder's default B-frames.
+        src=self.base/'gop-nob.mp4'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=192x128:r=24:d=2','-c:v','libx264',
+                '-x264-params','keyint=12:min-keyint=12:scenecut=0:bframes=0','-pix_fmt','yuv420p',src])
+        p=self.patch(generated=str(self.generated),target=[6,29],frame_map=list(range(23)),crop=[0,0,96,128],protect=None)
+        q=self.patch(generated=str(self.generated),target=[40,44],frame_map=list(range(4)),crop=[96,0,96,128],protect=None)
+        cfg=self.config('gop-nob',source=str(src),source_size=[192,128],patches=[p,q])
+        out=self.base/'gop-nob-out.mp4'
+        r=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),'--output',str(out),
+                          '--copy-unpatched'],capture_output=True,text=True,encoding='utf-8',env=dict(os.environ,FLOW_SEGMENTS='1'))
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIn('copied no frames',r.stderr)
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
+        self.assertEqual((rpt['copy_unpatched']['copied_frames'],rpt['copy_unpatched']['rendered_frames']),(0,48))
+        b=lambda path:json.loads(fp.run([fp.FFPROBE,'-v','error','-select_streams','v:0','-show_entries',
+                                         'stream=has_b_frames','-of','json',str(path)]))['streams'][0]['has_b_frames']
+        self.assertEqual(b(out),b(src))
 
 
 if __name__=='__main__':
