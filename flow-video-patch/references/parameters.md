@@ -76,7 +76,20 @@ python scripts/flow_patch.py prepare --config "prepare.json" --output "upload.mp
 python scripts/flow_patch.py merge --config "merge.json" --output "patched.mp4" --dry-run
 python scripts/flow_patch.py merge --config "merge.json" --output "patched.mp4"
 python scripts/flow_patch.py merge --config "merge.json" --output "check-40-80.mp4" --frames 40:80 --preview
+python scripts/flow_patch.py init-merge --prepare-report "upload.report.json" --generated "flow-result.mp4" --output "merge.json" [--matte ellipse X Y W H --feather N] [--name NAME] [--append]
+python scripts/flow_patch.py mark-timing --config "merge.json" --patch 0 --basis "怎样核对的" [--evidence FILE]
+python scripts/qc_tools.py review-set --record "patched.visual-review.json" --check ID --status pass|fail|not_applicable|not_run [--intervals A:B ...] [--evidence FILE ...] [--reviewer agent|user --confirmation 出处] [--note 文字]
+python scripts/qc_tools.py review-status --record "patched.visual-review.json"
 ```
+
+精简输出：`qc_tools.py` 的所有命令和 `merge`／`prepare --dry-run` 接受 `--brief`（只打印汇总，逐帧列表以 `{"omitted_items": N}` 代替；NOTICE 与错误照常完整打印）和 `--json-out PATH`（把完整结果写入新文件，内容与不带 `--brief` 时的 stdout 相同；文件已存在即拒绝）。智能体默认用 `--brief`，需要逐帧数据时再读 `--json-out` 文件。`fit_patch.py` 写出的建议配置中逐帧仿射与配准记录每帧一行（解析后与完全缩进的写法是同一对象），终端另打印一行变更摘要（配准帧数、最低相关度、相对初始值的最大平移与线性变化、平移范围、调色结论），通常不必打开建议文件。
+
+由 prepare 报告生成 merge 配置（`init-merge`）：从 prepare 报告抄入 source、source_size、fps、crop 轨迹、work_size，target 取 core、generated_start 取 `core_in_upload[0]`，路径写成相对新配置的位置；`--append` 把补丁加到已有配置（源片、尺寸、fps 须相同，名称不能重复）。返回片 fps 不同、宽高比不符或帧数不够覆盖 target 时拒绝并列出选项（显式 frame_map 重复末帧或 null 保留原片、缩短 target、重刷），不自动变速或补帧。两项待定状态写在配置里，换会话也不会丢：
+
+- 不给 `--matte` 时写 `"matte": {"pending": …}`：任何 merge（含 `--frames`／`--preview`）、`fit_patch.py`、`qc_tools.py seam`／`precheck` 都拒绝该补丁；`--dry-run` 照常列出并标 `matte pending`。裁切画布、生成蒙块、融合遮罩是三件事（SKILL.md 原则 11），遮罩不从蒙块推断。
+- 写 `"timing": {"status": "unverified", …}`：尺寸、fps、帧数合格不能证明 generated_start 正确（返回片可能足帧但整体偏移）。完整 merge 拒绝；检查用导出与 QC 照常运行，报告 `scope.timing` 标注。核对后用 `mark-timing --basis` 记录依据（可附 `--evidence` 文件，记录其 SHA-256）；该记录绑定返回片 SHA-256 与 target、generated_start、frame_map，任何一项变化即回到 unverified。没有 `timing` 字段的手写配置行为不变。
+
+视觉验收记录（`review-set`／`review-status`）：只能修改模板里已有的检查项；写入前核对成片 SHA-256 与记录一致，不一致即拒绝（记录属于另一个文件）。`pass`／`fail` 至少附一个存在的证据文件（记录相对路径与 SHA-256），`not_applicable` 须 `--note` 写理由；`--reviewer user` 须 `--confirmation` 写明用户确认的出处（引用原话与时间，或用户签名的审看文件），智能体不得代写。整体状态由规则计算、不能手设：任何 fail → `visual_fail`；否则任何 not_run、缺项、无理由的 not_applicable、无确认出处的用户项 → `pending_visual_review`；只有同时满足以下条件才是 `visual_pass`——技术校验为 pass，技术报告是可交付的完整导出（检查用导出永远不能通过），报告、记录与当前成片三方 SHA-256 一致，每个 pass 项的证据文件仍在且未改，`coverage_requirements` 所列检查的审看区间覆盖报告中全部修补区间（接点类覆盖每个补丁首尾前后 0.5 秒）。未满足的条件列在 `blocking`。该命令只管理记录，不代替实际审看。
 
 接缝量化（只读）：`python scripts/qc_tools.py seam --config merge.json --patch 0 [--step 2]` 按合成时相同的对齐、调色、遮罩与淡变，计算过渡带（`w=4a(1−a)>0.2`）内新旧高频差、低频差的加权均值，以及 `w>0.5` 且高频差超过 `--threshold` 的像素数；输出逐帧数值、汇总与最差帧。用于同一镜头候选方案的比较，不代表视觉验收。
 

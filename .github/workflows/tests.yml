@@ -57,4 +57,5 @@ jobs:
       - run: python tests/qc_tools_test.py
       - run: python tests/color_pipeline_test.py
       - run: python tests/remote_run_test.py
+      - run: python tests/workflow_test.py
       - run: sh tests/ffmpeg_regression.sh

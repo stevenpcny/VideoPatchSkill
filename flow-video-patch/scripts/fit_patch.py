@@ -7,6 +7,7 @@ using it: a high ECC score can still align the wrong repeated background.
 --max-linear-change so a drifting fit is rejected instead of written.
 """
 import argparse
+import copy
 import json
 from pathlib import Path
 import contextlib
@@ -18,6 +19,33 @@ from flow_patch import (load, validate_source, probe, mapping, Reader, rectangle
 
 MOTIONS = {'translation': cv2.MOTION_TRANSLATION, 'euclidean': cv2.MOTION_EUCLIDEAN,
            'affine': cv2.MOTION_AFFINE}
+
+
+def compact_json(cfg):
+    """The indent=2 layout, except that per-frame lists (affine keyframes, registration rows) keep one
+    entry per line. json.loads gives back exactly the same object as the fully indented form."""
+    obj, lists = copy.deepcopy(cfg), {}
+
+    def mark(value):
+        key = f'@@flow-compact-{len(lists)}@@'
+        lists[key] = value
+        return key
+    for p in obj.get('patches', []):
+        affine = p.get('source_to_generated_affine')
+        if isinstance(affine, list) and affine and isinstance(affine[0], dict):
+            p['source_to_generated_affine'] = mark(affine)
+    if isinstance(obj.get('fit_review', {}).get('registration'), list):
+        obj['fit_review']['registration'] = mark(obj['fit_review']['registration'])
+    text = json.dumps(obj, ensure_ascii=False, indent=2)
+    for key, value in lists.items():
+        quoted = json.dumps(key)
+        require(text.count(quoted) == 1, 'Configuration text collides with the compact-layout marker')
+        at = text.index(quoted)
+        line = text[text.rfind('\n', 0, at)+1:at]
+        indent = ' '*(len(line)-len(line.lstrip(' ')))
+        body = ',\n'.join(indent+'  '+json.dumps(v, ensure_ascii=False, separators=(',', ':')) for v in value)
+        text = text.replace(quoted, '[\n'+body+'\n'+indent+']' if value else '[]')
+    return text+'\n'
 
 
 def main():
@@ -47,7 +75,7 @@ def main():
     indices = mapping(p, info['frames']); ws = tuple(checked_size(p['work_size']))
     require(all(j is None or j < gi['frames'] for j in indices), 'Invalid frame map')
     require(abs((ws[0]/ws[1])/(gi['size'][0]/gi['size'][1])-1)<.005, 'Aspect mismatch')
-    rows, colors = [], []
+    rows, colors, initials = [], [], []
     previous = np.array([[1,0,0],[0,1,0]],np.float32)
     with contextlib.ExitStack() as stack:
         sr = Reader(cfg['source'],info['size']); stack.callback(sr.close)
@@ -83,6 +111,7 @@ def main():
                 previous = warp.copy()
             rows.append({'frame':i,'correlation':corr,'accepted':accepted,
                          'warp':warp.flatten().tolist()})
+            initials.append(initial.flatten())
             # Color sampling spaced over the clip; no per-frame color parameters.
             if accepted and k % max(1,len(indices)//7) == 0:
                 aligned = cv2.warpAffine(b,warp,ws,flags=cv2.INTER_LINEAR|cv2.WARP_INVERSE_MAP)
@@ -127,8 +156,19 @@ def main():
                          'registration':rows,'smoothing':'[0.25,0.5,0.25] on adjacent observed frames',
                          'color':color_report}
     with private_output(args.output) as f:
-        json.dump(cfg,f,ensure_ascii=False,indent=2)
+        f.write(compact_json(cfg))
     print('Proposal written:',args.output)
+    # What changed, so the proposal need not be opened to find out.
+    delta = smooth-np.array(initials)
+    print(json.dumps({
+        'patch': args.patch, 'motion': args.motion, 'frames_registered': len(rows),
+        'correlation_min': min(r['correlation'] for r in rows),
+        'max_shift_from_initial_px': float(np.hypot(delta[:, 2], delta[:, 5]).max()),
+        'max_linear_change': float(np.abs(delta[:, [0, 1, 3, 4]]).max()),
+        'translation_range_px': [float(np.ptp(smooth[:, 2])), float(np.ptp(smooth[:, 5]))],
+        'color': color_report,
+        'next': 'review representative frames, then qc_tools.py precheck / merge --frames --preview'},
+        ensure_ascii=False))
 
 
 if __name__ == '__main__':

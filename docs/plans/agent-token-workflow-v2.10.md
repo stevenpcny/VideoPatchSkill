@@ -480,3 +480,30 @@ SKILL.md 与 AGENT_ENTRY.md 不写版本说明、日期等每版都变的文字�
 - 在 main 上用 `tools/token_fixture.py` 与 `tools/token_budget.py` 重跑，结果见本文开头的基线说明；数字不变，证据文件新增 `fixture_record_main`。
 - 首批 W1 的依赖（#20 合并）已满足；W1 须保持 #20 合并时撤回零复制短路后的 `--copy-unpatched` 行为。
 
+### 修订 3：首批 W1 已实施（同一 PR）
+
+范围：T1、T2、C1（含 `mark-timing`）、E4（含 `review-status`），按第 5 节修订 1 的阻断条件实现。改动文件：`scripts/flow_patch.py`、`scripts/qc_tools.py`、`scripts/fit_patch.py`、`assets/visual-review-template.json`（新增 `coverage_requirements`）、`references/parameters.md`／`workflow.md`／`verification.md`、`SKILL.md`、`AGENT_ENTRY.md`、`CHANGELOG.md`、两份 README、CI、`SHA256SUMS.json`；新增 `tests/workflow_test.py`（11 项）。没有发版、没有改版本号或 ZIP。
+
+自验证（Linux，Python 3.13.18，NumPy 2.5.3，OpenCV 5.0.0，FFmpeg 6.1.1，NumPy 内核）：
+
+- **媒体不变**：同一参数下 `init-merge` 生成的配置与手写配置成片 SHA-256 相同；紧凑写出的 fit 建议与完全缩进写法成片相同；无 `timing` 字段的旧配置报告不出现 `scope.timing`。
+- **输出体量**（同一 fixture，main + W1）：
+
+  | 项目 | 之前 | `--brief`／W1 后 |
+  |---|---:|---:|
+  | `seam` stdout | 15,872 B | 545 B |
+  | `precheck` stdout | 3,703 B | 1,279 B（高于 T1 的 1 KB 目标：保留了 summary、seam 汇总与人工项清单） |
+  | `merge --dry-run` stdout | 3,437 B | 305 B |
+  | `fit_patch` 建议文件 | 46,817 B | 23,394 B（另打印 591 B 摘要） |
+
+  `--json-out` 文件与不带 `--brief` 的 stdout 逐字节相同（测试断言）。
+- **阻断与负例**：workflow_test 覆盖 E4 的预览片人工构造记录、技术校验未运行、证据缺失与被改、区间不全（修补区间与接点窗口）、fail 与 not_run 并存、未知与缺失检查项、无理由 not_applicable、无确认出处的用户项、报告哈希不一致；C1 的 matte pending（6 个命令均拒绝且不留输出）、timing unverified（完整导出拒绝、检查用导出可运行并标注）、足帧但整体偏移 2 帧的返回片、改 generated_start 与替换返回片后回到 unverified、返回片不足、重名与非法遮罩。
+- **测试能否发现问题**：分别去掉"报告须为可交付完整导出"、"fail 优先于 not_run"、"完整导出须核验时间"三处判断，对应测试均失败；恢复后通过。
+- **全部测试**：见 PR 评论中的完整结果（smoke、security、qc_tools、color_pipeline、remote_run、workflow、ffmpeg_regression）。原生内核矩阵与 Windows／macOS 由 CI 复跑。
+
+与计划的差异：
+
+- `precheck --brief` 为 1,279 B，未达 1 KB；是否进一步裁剪（如去掉 `manual_checks_remaining` 文字）请上游决定。
+- C1 中"timemap 证据与配置逐帧一致才可标 verified"依赖 E2，尚未实现；当前 `mark-timing` 要求非空的文字依据，可选附证据文件并记录其 SHA-256。E2 实施后再加一致性校验。
+- `review-set` 对用户确认只要求写明出处（引用原话与时间，或签名文件），无法核实其真伪，记录中会标出 `reviewer: user` 与出处供人工核对（Q3 仍待上游确认）。
+

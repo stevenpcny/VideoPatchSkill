@@ -4,6 +4,13 @@
 
 ## 未发布
 
+- 减少智能体 token 与手工步骤（PR #21 计划首批 W1：T1、T2、C1、E4）。媒体处理与已有配置的成片不变：同一参数下 `init-merge` 生成的配置与手写配置成片逐字节相同，紧凑写出的 fit 建议与完全缩进写法成片逐字节相同。
+  - T1：`qc_tools.py` 全部命令与 `merge`／`prepare --dry-run` 新增 `--brief`（逐帧列表以条数代替，NOTICE 与错误不受影响）和 `--json-out PATH`（完整结果写入新文件，与原 stdout 相同）。合成片（1280×720，96 帧补丁，`tools/token_fixture.py`）stdout：`seam` 15,872 → 545 B，`precheck` 3,703 → 1,279 B，`merge --dry-run` 3,437 → 305 B。
+  - T2：`fit_patch.py` 的建议配置中逐帧仿射与配准记录每帧一行（解析后对象不变），终端另打印一行变更摘要；同一合成片建议文件 46,817 → 23,394 B，摘要一行 591 B。
+  - C1：`flow_patch.py init-merge` 从 prepare 报告生成 merge 补丁（crop、尺寸、target、generated_start、相对路径），返回片帧数不够、fps 或宽高比不符即拒绝并列出选项；未给 `--matte` 时写 `matte.pending`，所有渲染与 QC 命令拒绝；写 `timing.status=unverified`，完整导出拒绝、检查用导出照常并在报告 `scope.timing` 标注；`mark-timing --basis` 记录核对依据，绑定返回片 SHA-256 与帧映射，任一变化即回到未核验。无 `timing` 字段的手写配置行为不变。
+  - E4：`qc_tools.py review-set`／`review-status` 管理视觉验收记录：只认模板内检查项，成片哈希不符即拒绝，pass／fail 须附存在的证据（记录 SHA-256），not_applicable 须写理由，用户审看须写确认出处；整体状态按规则计算（fail 优先于 not_run），visual_pass 另须技术校验通过、报告为可交付完整导出、三方哈希一致、证据未变、`coverage_requirements` 所列检查的区间覆盖全部修补帧与接点前后 0.5 秒。模板新增 `coverage_requirements`。
+  - 测试：新增 `tests/workflow_test.py`（11 项，含预览片人工构造记录、技术校验未运行、证据缺失或被改、区间不全、fail 与 not_run 并存、足帧但整体偏移的返回片、改映射或换返回片后回到未核验等负例），已加入 CI。
+
 - `qc_tools.py precheck`／`seam`／`offset`：一次命令内每个输入只完整解码一次（PR #19 计划 P1 第一步）。此前 precheck 对源片解码 2 次、返回片 4 次（自身、`merge_plan`、再经 `seam` 重复一遍），offset 带 `--motion-region` 时两个文件各 2 次，seam 返回片 2 次。现在同一命令内再次探测、且文件身份（设备、inode、大小、mtime）未变时复用首次结果；身份变化即重新解码，探测期间文件变化即报错；严格探测从不复用；命令结束即丢弃，不跨命令、不进入 merge 或成片校验。6 个 QC 命令在合成片上的输出与改动前逐字节相同。抽样不变。
 - `qc_tools.py precheck`：几何抽样与接缝分数改为一遍顺序读取（PR #19 计划 P1 第 4 步）。此前 precheck 自己读一遍，再调用整个 `seam` 命令重新载入配置、重做 `merge_plan` 逐帧检查并再读一遍；Reader 4 个 → 2 个。两类样本仍各自保持原帧集合（precheck 抽样帧与 seam 每 step 帧取并集读取、分别计算），precheck 内的接缝摘要与单独 `seam` 同 step 结果相同。4 种配置（含未映射/重复帧、fade、调色、fit_exclude、关键帧仿射与遮罩、多频段、短 target）× precheck 3 种 samples、seam 2 种 step 共 20 组输出与改动前逐字节相同。1080p 240 帧 precheck 中位数：v2.9 8.34 s → 共享探测 6.42 s → 单遍读取 5.30 s（交替各 3 次，单机合成片观测）。
 - `qc_tools.py offset --motion-region`：两个区域从同一遍读取中取出（PR #19 计划 P5 offset 第一项），此前每个文件读两遍。合成片 3 组参数与 1080p 自比对输出逐字节相同；1080p 240 帧、整宽区域：33.6 s → 20.0 s（交替各 3 次中位数）。

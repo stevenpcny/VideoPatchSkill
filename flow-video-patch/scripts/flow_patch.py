@@ -724,8 +724,14 @@ def static_matte(spec):
 _MATTES = {}
 
 
+def require_matte_set(spec):
+    require('pending' not in spec, f"Matte pending ({spec.get('pending')}); set matte.region, shape and "
+            'feather in the configuration before rendering or measuring')
+
+
 def matte(spec, frame, size):
     """Soft matte; one without keyframes is computed once and returned as a fresh copy."""
+    require_matte_set(spec)
     if not static_matte(spec):
         return _matte(spec, frame, size)
     key = (json.dumps(spec, sort_keys=True), tuple(size))
@@ -870,13 +876,25 @@ def prepare_plan(cfg, info):
             'core_in_upload': [start-first, end-first], 'audio': info['audio']}
 
 
-def merge_plan(cfg, info, span=None):
+def merge_plan(cfg, info, span=None, allow_pending=False):
     """span=(first,last): a check-only export checks per-frame crop, matte and affine holes only on
     the frames it renders (a patch outside it still gets its first frame checked, so a malformed
-    matte or blend is refused anyway). Deliverables and dry runs pass no span and check every frame."""
+    matte or blend is refused anyway). Deliverables and dry runs pass no span and check every frame.
+    allow_pending (dry runs only): a patch whose matte is still pending is planned without its matte
+    checks and marked, instead of refused."""
     require(len(cfg['patches']) > 0, 'No patches')
     plans = []
     for p in cfg['patches']:
+        if 'pending' in p['matte']:
+            require(allow_pending, f"Patch {p.get('name', '')!r}: " + f"matte pending ({p['matte']['pending']}); "
+                    'set matte.region, shape and feather in the configuration before rendering or measuring')
+            gi = probe(p['generated'])
+            require(gi['fps'] == info['fps'], 'Generated fps differs; normalize explicitly before mapping')
+            indices = mapping(p, info['frames'])
+            require(all(j is None or j < gi['frames'] for j in indices),
+                    'Mapped generated frame missing; provide explicit frame_map, never silently hold/retime')
+            plans.append({'info': gi, 'indices': indices, 'matte': 'pending'})
+            continue
         gi = probe(p['generated'])
         require(gi['fps'] == info['fps'], 'Generated fps differs; normalize explicitly before mapping')
         indices = mapping(p, info['frames'])
@@ -1507,6 +1525,170 @@ def prefilled_review(result, cfg, output, report):
     return record
 
 
+TIMING_UNVERIFIED = ('init-merge: generated_start comes from the prepare report core_in_upload; size, fps and '
+                     'frame count do not prove the return is in step with the upload')
+
+
+def timing_key(p):
+    """What a timing verification vouches for: the return's bytes and the declared frame mapping."""
+    return hashlib.sha256(json.dumps({'generated_sha256': sha(p['generated']), 'target': p['target'],
+                                      'generated_start': p.get('generated_start'),
+                                      'frame_map': p.get('frame_map')}, sort_keys=True).encode()).hexdigest()
+
+
+def timing_state(p):
+    """None for configurations without a timing field (hand-written; behaviour unchanged)."""
+    t = p.get('timing')
+    if t is None:
+        return None
+    require(isinstance(t, dict), 'timing must be an object')
+    if t.get('status') != 'verified':
+        return 'unverified'
+    if not str(t.get('basis', '')).strip():
+        return 'unverified (marked verified without a basis)'
+    if t.get('mapping_sha256') != timing_key(p):
+        return 'unverified (return file or frame mapping changed since it was verified)'
+    return 'verified'
+
+
+def relative_to(path, base):
+    try:
+        return Path(os.path.relpath(path, base)).as_posix()
+    except ValueError:  # another Windows drive
+        return str(path)
+
+
+def replace_json(path, obj):
+    """Rewrite a task JSON file in place: write a sibling temporary file, then rename over it."""
+    fd, tmp = tempfile.mkstemp(prefix='.'+path.name+'.', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as f:
+            json.dump(obj, f, ensure_ascii=False, indent=2); f.write('\n')
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(tmp)
+        raise
+
+
+def init_merge(args):
+    """merge.json patch from a prepare report: crop, sizes, target and generated_start are copied, never
+    guessed. The matte stays pending unless given, and timing stays unverified until mark-timing."""
+    require(args.prepare_report is not None and args.generated is not None and args.output is not None,
+            '--prepare-report, --generated and --output required')
+    rep_path = args.prepare_report.resolve()
+    require(rep_path.is_file(), 'Prepare report not found')
+    rep = json.loads(rep_path.read_text(encoding='utf-8'))
+    require(rep.get('mode') == 'prepare' and 'core_in_upload' in rep.get('output', {}),
+            'Not a prepare report (needs mode=prepare and output.core_in_upload)')
+    src_cfg, up = rep['configuration'], rep['output']; prep = src_cfg['prepare']
+    dest = output_path(args.output)
+    generated = Path(args.generated).expanduser().absolute()
+    info = validate_source(dict(src_cfg)); gi = probe(generated)
+    require(gi['fps'] == info['fps'], f"Return fps {gi['fps']} differs from the source {info['fps']}; "
+            'normalize explicitly before mapping')
+    work = checked_size(prep['output_size'])
+    require(abs((gi['size'][0]/gi['size'][1])/(work[0]/work[1])-1) < 0.005,
+            f"Return aspect {gi['size']} differs from the upload {work}; check crop/scale/outpaint first")
+    target = list(prep['core']); start = up['core_in_upload'][0]; need = start+target[1]-target[0]
+    require(need <= gi['frames'],
+            f"Return has {gi['frames']} frames but generated_start={start} with target {target} needs {need}. "
+            'Not filled in automatically. Options: an explicit frame_map that repeats the last frame or uses '
+            'null to keep original frames (review the boundary), a shorter target, or regenerate.')
+    notices = []
+    if gi['frames'] != up['frames']:
+        notices.append(f"Return has {gi['frames']} frames, the upload {up['frames']}: extension or retiming? "
+                       'Timing stays unverified; check it (references/return-fit-assessment.md 1.3)')
+    if args.matte:
+        shape, *box = args.matte
+        require(shape in ('rect', 'ellipse'), '--matte shape must be rect or ellipse')
+        try:
+            box = [int(v) for v in box]
+        except ValueError:
+            require(False, '--matte needs integer x y w h')
+        matte_spec = {'region': box, 'shape': shape, 'feather': args.feather, 'protect': []}
+        _matte(matte_spec, target[0], work)  # refuse an impossible matte now, not at merge time
+    else:
+        matte_spec = {'pending': 'set the blend matte; crop canvas, generation mask and blend matte are '
+                                 'different things (SKILL.md principle 11)'}
+    patch = {'name': args.name or f'patch-{target[0]}-{target[1]}',
+             'generated': relative_to(generated, dest.parent), 'target': target, 'generated_start': start,
+             'crop': prep['crop'], 'work_size': list(work), 'source_to_generated_affine': [1, 0, 0, 0, 1, 0],
+             'matte': matte_spec, 'blend': 'alpha', 'fade_frames': 0,
+             'gain_bgr': [1, 1, 1], 'offset_bgr': [0, 0, 0],
+             'timing': {'status': 'unverified', 'basis': TIMING_UNVERIFIED}}
+    if args.append:
+        require(dest.is_file(), '--append needs an existing merge configuration at --output')
+        cfg = json.loads(dest.read_text(encoding='utf-8'))
+        require(cfg.get('schema_version') == 1, 'Require schema_version=1')
+        require(Path(resolved(dest.parent, cfg['source'])).resolve() == Path(src_cfg['source']).resolve()
+                and cfg['source_size'] == src_cfg['source_size'] and str(cfg['fps']) == str(src_cfg['fps']),
+                'The prepare report is for another source, size or fps than this merge configuration')
+        require(patch['name'] not in {q.get('name') for q in cfg.get('patches', [])},
+                'Patch name already used; pass --name')
+        cfg.setdefault('patches', []).append(patch)
+        replace_json(dest, cfg)
+    else:
+        require(not dest.exists(), 'Output configuration exists; choose a new name or pass --append')
+        cfg = {'schema_version': 1, 'source': relative_to(Path(src_cfg['source']), dest.parent),
+               'source_size': src_cfg['source_size'], 'fps': src_cfg['fps'], 'patches': [patch]}
+        with private_output(dest) as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2); f.write('\n')
+    for note in notices:
+        print('NOTICE: '+note, file=sys.stderr)
+    print(json.dumps({'config': str(dest), 'patch': len(cfg['patches'])-1, 'name': patch['name'],
+                      'target': target, 'generated_start': start,
+                      'matte': 'set' if args.matte else 'pending: every render and QC command refuses this patch',
+                      'timing': 'unverified: full merge refuses until mark-timing records a basis; '
+                                'check exports and QC still run'}, ensure_ascii=False))
+
+
+def mark_timing(args):
+    """Record that a patch's frame mapping was checked, and on what basis. Bound to the return's SHA-256 and
+    the mapping, so changing either puts the patch back to unverified."""
+    require(args.config is not None and args.basis and args.basis.strip(), '--config and --basis required')
+    path = args.config.resolve()
+    cfg = json.loads(path.read_text(encoding='utf-8'))
+    require(cfg.get('schema_version') == 1, 'Require schema_version=1')
+    patches = cfg.get('patches', [])
+    require(0 <= args.patch < len(patches), 'Patch index out of range')
+    p = patches[args.patch]
+    key = timing_key(dict(p, generated=str(resolved(path.parent, p['generated']))))
+    timing = {'status': 'verified', 'basis': args.basis.strip(), 'mapping_sha256': key}
+    if args.evidence:
+        ev = args.evidence.resolve()
+        require(ev.is_file(), 'Evidence file not found')
+        timing['evidence'] = {'path': relative_to(ev, path.parent), 'sha256': sha(ev)}
+    p['timing'] = timing
+    replace_json(path, cfg)
+    print(json.dumps({'config': str(path), 'patch': args.patch, 'timing': 'verified',
+                      'note': 'Changing the return file, target, generated_start or frame_map makes it unverified again'},
+                     ensure_ascii=False))
+
+
+def write_json_out(path, text):
+    with private_output(path) as f:
+        f.write(text+'\n')
+
+
+def brief_dry_run(result):
+    out = {'mode': result['mode'], 'source_frames': result['source_info']['frames'], 'fps': result['source_info']['fps']}
+    if result['mode'] == 'merge':
+        rows = []
+        for p, plan in zip(result['config']['patches'], result['plan']):
+            mapped = [j for j in plan['indices'] if j is not None]
+            rows.append({'name': p.get('name'), 'target': p['target'],
+                         'generated_frames': plan['info']['frames'], 'mapped': len(mapped),
+                         'repeated': len(mapped)-len(set(mapped)), 'kept_original': plan['indices'].count(None),
+                         'matte': plan.get('matte', 'set'), 'timing': timing_state(p) or 'not declared'})
+        out['patches'] = rows
+    else:
+        out['plan'] = result['plan']
+    out['notices'] = result['notices']
+    out['detail'] = 'omitted (--brief); --json-out writes the full dry-run JSON'
+    return out
+
+
 def utf8_console():
     """Chinese paths and messages print the same on every platform, without PYTHONUTF8."""
     for stream in (sys.stdout, sys.stderr):
@@ -1517,7 +1699,7 @@ def utf8_console():
 def main():
     utf8_console()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode',choices=['doctor','inspect','prepare','merge','regrid'])
+    parser.add_argument('mode',choices=['doctor','inspect','prepare','merge','regrid','init-merge','mark-timing'])
     parser.add_argument('--config',type=Path)
     parser.add_argument('--source',type=Path)
     parser.add_argument('--output',type=Path)
@@ -1528,6 +1710,20 @@ def main():
                         help='merge only: copy unpatched source GOPs bit for bit, re-encode only GOPs with patches')
     parser.add_argument('--preview',action='store_true',
                         help='merge only: fast ultrafast encode for checking (not deliverable)')
+    parser.add_argument('--brief',action='store_true',
+                        help='dry run: one summary line per patch instead of the full plan (NOTICE lines unchanged)')
+    parser.add_argument('--json-out',type=Path,metavar='PATH',
+                        help='dry run: also write the full dry-run JSON to this new file')
+    parser.add_argument('--prepare-report',type=Path,help='init-merge: the prepare report of the upload')
+    parser.add_argument('--generated',type=Path,help='init-merge: the downloaded Flow return')
+    parser.add_argument('--name',help='init-merge: patch name')
+    parser.add_argument('--append',action='store_true',help='init-merge: add the patch to the existing --output')
+    parser.add_argument('--matte',nargs=5,metavar=('SHAPE','X','Y','W','H'),
+                        help='init-merge: blend matte rect|ellipse x y w h in work pixels (otherwise pending)')
+    parser.add_argument('--feather',type=float,default=16,help='init-merge: matte feather (default 16)')
+    parser.add_argument('--patch',type=int,default=0,help='mark-timing: patch index')
+    parser.add_argument('--basis',help='mark-timing: how the frame mapping was checked')
+    parser.add_argument('--evidence',type=Path,help='mark-timing: evidence file (its SHA-256 is recorded)')
     args = parser.parse_args()
     for t in (FFMPEG,FFPROBE):
         require(shutil.which(t), f'Tool missing: {t}; see references/install.md')
@@ -1550,6 +1746,10 @@ def main():
     if args.mode == 'inspect':
         require(args.source is not None, '--source required')
         print(json.dumps(probe(args.source),indent=2)); return
+    if args.mode == 'init-merge':
+        init_merge(args); return
+    if args.mode == 'mark-timing':
+        mark_timing(args); return
     if args.mode == 'regrid':
         require(args.source is not None and args.output is not None, '--source and --output required')
         output = output_path(args.output); report = output_path(output.with_suffix('.report.json'))
@@ -1573,6 +1773,9 @@ def main():
     require(args.config is not None and args.output is not None, '--config and --output required')
     require(args.mode == 'merge' or not (args.frames or args.preview or args.copy_unpatched),
             '--frames/--preview apply to merge only; Flow uploads always use the full prepare encode')
+    require(args.dry_run or not (args.brief or args.json_out), '--brief/--json-out apply to --dry-run')
+    json_out = output_path(args.json_out) if args.json_out else None
+    require(json_out is None or not json_out.exists(), '--json-out file exists; choose a new name')
     span = None
     if args.frames is not None:
         parts = args.frames.split(':')
@@ -1595,16 +1798,27 @@ def main():
             'Invalid --frames interval for this source')
     # A dry run is a full plan check, with or without --frames.
     checked = None if args.dry_run else span
-    plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info,checked)
+    plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info,checked,args.dry_run)
     notices = output_notices(info, args.mode)
+    states = [(p.get('name', str(k)), timing_state(p)) for k, p in enumerate(cfg.get('patches', []))]
+    timing = {n: s for n, s in states if args.mode == 'merge' and s is not None}
+    unverified = [f'{n}: {s}' for n, s in timing.items() if s != 'verified']
+    if unverified and not args.dry_run:
+        require(not deliverable, 'Timing unverified for ' + '; '.join(unverified) + '. A full export needs '
+                'mark-timing with the basis of the check (references/parameters.md init-merge); '
+                'check exports (--frames/--preview) still run')
+        notices.append('Timing unverified (check export only): ' + '; '.join(unverified))
     if hardware:
         notices.append(f'Video encoder {video_encoder()} (hardware); compare quality with libx264 '
                        'before relying on it')
     for note in notices:
         print('NOTICE: '+note, file=sys.stderr)
     if args.dry_run:
-        print(json.dumps({'mode':args.mode,'config':cfg,'source_info':info,'plan':plan,'notices':notices},
-                         ensure_ascii=False,indent=2)); return
+        result = {'mode':args.mode,'config':cfg,'source_info':info,'plan':plan,'notices':notices}
+        text = json.dumps(result,ensure_ascii=False,indent=2)
+        if json_out:
+            write_json_out(json_out, text)
+        print(json.dumps(brief_dry_run(result),ensure_ascii=False) if args.brief else text); return
     output = output_path(args.output); report = output_path(output.with_suffix('.report.json'))
     require(output.suffix.lower() in ('.mp4','.mov','.mkv'), 'Output must be MP4/MOV/MKV')
     # Deliverable merges also get a pre-filled visual review record next to the report.
@@ -1651,6 +1865,8 @@ def main():
         if args.mode == 'merge':
             result['scope'] = {'frames': list(span) if span else [0, info['frames']],
                                'preview_encode': args.preview, 'deliverable': deliverable}
+            if timing:
+                result['scope']['timing'] = timing
             if span:
                 result['scope']['per_frame_checks'] = 'exported frames only; a full export checks every patch frame'
         if not deliverable:

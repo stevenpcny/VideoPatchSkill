@@ -19,6 +19,7 @@ python tests/security_test.py
 python tests/qc_tools_test.py
 python tests/color_pipeline_test.py
 python tests/remote_run_test.py
+python tests/workflow_test.py
 sh tests/ffmpeg_regression.sh
 ```
 

@@ -9,14 +9,21 @@
   seam       transition-band mismatch of one merge patch (w=4a(1-a)), before or between candidates
   precheck   return fit pre-check before merging: file, spec, mapping, geometry, residual motion,
              colour, canvas holes and seam, with a provisional "fits / hard / regenerate" call
+  review-set     record one visual check in a *.visual-review.json; the overall status is computed
+  review-status  evaluate a visual review record without changing it
+
+--brief prints a summary (per-frame lists omitted); --json-out PATH writes the full result to a new file.
 
 All frame indices are zero-based. Rectangles are x,y,w,h in the measured video's pixels.
 Results are evidence for a human decision, not proof of identity, lip sync or a seamless merge.
 """
 import argparse
 import contextlib
+import datetime
 import functools
+from fractions import Fraction
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -309,10 +316,223 @@ def cmd_precheck(a):
             'note': 'Evidence for a decision, not visual acceptance; thresholds are orders of magnitude.'}
 
 
+REVIEW_TEMPLATE = Path(__file__).resolve().parents[1]/'assets'/'visual-review-template.json'
+CHECK_STATUSES = ('not_run', 'pass', 'fail', 'not_applicable')
+
+
+def review_template():
+    return json.loads(REVIEW_TEMPLATE.read_text(encoding='utf-8'))
+
+
+def under(base, value):
+    p = Path(value).expanduser()
+    return p if p.is_absolute() else base/p
+
+
+def rel(path, base):
+    try:
+        return Path(os.path.relpath(Path(path).resolve(), base.resolve())).as_posix()
+    except ValueError:
+        return str(Path(path).resolve())
+
+
+def evidence_problem(base, entry):
+    """None if the evidence entry still points at the file it was recorded with."""
+    path = under(base, entry['path'] if isinstance(entry, dict) else entry)
+    if not path.is_file():
+        return f'missing evidence file {path.name}'
+    if isinstance(entry, dict) and entry.get('sha256') and fp.sha(path) != entry['sha256']:
+        return f'evidence file {path.name} changed after it was recorded'
+    return None
+
+
+def uncovered(intervals, required):
+    """Parts of the required [a,b) intervals outside the union of the checked [a,b) intervals."""
+    merged = []
+    for x, y in sorted(tuple(i) for i in intervals):
+        if merged and x <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], y)
+        else:
+            merged.append([x, y])
+    gaps = []
+    for a, b in required:
+        pos = a
+        for x, y in merged:
+            if y <= pos:
+                continue
+            if x >= b:
+                break
+            if x > pos:
+                gaps.append([pos, x])
+            pos = y
+            if pos >= b:
+                break
+        if pos < b:
+            gaps.append([pos, b])
+    return gaps
+
+
+def required_coverage(record, report, template):
+    """Per coverage-type check, the source intervals its review must span (from the technical report)."""
+    targets = [p['target'] for p in report['configuration']['patches']]
+    frames = report['output']['frames']
+    half = round(Fraction(str(report['output']['fps']))*Fraction(str(
+        template['coverage_requirements']['join_window_seconds'])))
+    joins = []
+    for a, b in targets:
+        joins += [[max(0, a-half), min(frames, a+half)], [max(0, b-half), min(frames, b+half)]]
+    joins = [w for w in joins if w[0] < w[1]]
+    req = {cid: targets for cid in template['coverage_requirements']['repair_intervals']}
+    req.update({cid: joins for cid in template['coverage_requirements']['join_windows']})
+    return req
+
+
+def review_evaluate(record_path, record):
+    """Overall status by rule: any fail -> visual_fail; any not_run / missing / unconfirmed -> pending;
+    visual_pass only when every gate below also holds. Returns (status, blocking reasons)."""
+    base, template = record_path.parent, review_template()
+    ids = [c['id'] for c in template['visual_checks']]
+    checks = {c.get('id'): c for c in record.get('visual_checks', [])}
+    failed, pending = [], []
+    for cid in checks:
+        if cid not in ids:
+            pending.append(f'unknown check id {cid!r}')
+    for cid in ids:
+        c = checks.get(cid)
+        if c is None:
+            pending.append(f'{cid}: missing from the record'); continue
+        status = c.get('status')
+        if status not in CHECK_STATUSES:
+            pending.append(f'{cid}: invalid status {status!r}')
+        elif status == 'fail':
+            failed.append(f'{cid}: fail')
+        elif status == 'not_run':
+            pending.append(f'{cid}: not_run')
+        elif status == 'not_applicable' and not str(c.get('notes', '')).strip():
+            pending.append(f'{cid}: not_applicable without a reason')
+        elif status == 'pass' and c.get('reviewer') == 'user' and not c.get('confirmation'):
+            pending.append(f'{cid}: user review without a confirmation source')
+    if failed:
+        return 'visual_fail', failed+pending
+    if pending:
+        return 'pending_visual_review', pending
+    gates = []
+    if record.get('technical_validation', {}).get('status') != 'pass':
+        gates.append('technical_validation is not pass')
+    output = under(base, record.get('output', ''))
+    current = fp.sha(output) if output.is_file() else None
+    if current is None:
+        gates.append('output file not found')
+    elif current != record.get('output_sha256'):
+        gates.append('output file SHA-256 differs from the record')
+    report_path = under(base, record.get('technical_report', ''))
+    report = json.loads(report_path.read_text(encoding='utf-8')) if report_path.is_file() else None
+    if report is None:
+        gates.append('technical report not found')
+    else:
+        if report.get('mode') != 'merge' or report.get('scope', {}).get('deliverable') is not True:
+            gates.append('technical report is not a deliverable full merge (check exports never pass)')
+        if report.get('output_sha256') != record.get('output_sha256'):
+            gates.append('technical report output SHA-256 differs from the record')
+    for cid in ids:
+        c = checks[cid]
+        if c['status'] != 'pass':
+            continue
+        if not c.get('evidence'):
+            gates.append(f'{cid}: pass without evidence')
+        gates += [f'{cid}: {e}' for e in filter(None, (evidence_problem(base, x) for x in c.get('evidence', [])))]
+    if report is not None and 'configuration' in report:
+        for cid, need in required_coverage(record, report, template).items():
+            if checks[cid]['status'] == 'pass':
+                gaps = uncovered(checks[cid].get('source_intervals_checked', []), need)
+                if gaps:
+                    gates.append(f'{cid}: reviewed intervals miss source frames {gaps}')
+    return ('pending_visual_review', gates) if gates else ('visual_pass', [])
+
+
+def parse_interval(text, frames):
+    parts = text.split(':')
+    fp.require(len(parts) == 2 and all(v.isdigit() for v in parts), f'Interval {text!r} must be START:END')
+    a, b = map(int, parts)
+    fp.require(0 <= a < b <= frames, f'Interval {text!r} outside [0,{frames})')
+    return [a, b]
+
+
+def cmd_review_set(a):
+    """Record one check of a visual review record bound to the current final file. The overall status
+    is recomputed by review_evaluate and cannot be set by hand."""
+    path = Path(a.record).resolve(); base = path.parent
+    record = json.loads(path.read_text(encoding='utf-8'))
+    ids = [c['id'] for c in review_template()['visual_checks']]
+    fp.require(a.check in ids, f'Unknown check id {a.check!r}; see assets/visual-review-template.json')
+    checks = {c.get('id'): c for c in record.get('visual_checks', [])}
+    fp.require(a.check in checks, f'Check {a.check!r} is missing from this record; regenerate it from the template')
+    output = under(base, record.get('output', ''))
+    fp.require(output.is_file(), 'The record\'s output file is not found next to the record')
+    current = fp.sha(output)
+    fp.require(current == record.get('output_sha256'), 'Output SHA-256 differs from the record: the record belongs '
+               'to another file and its checks no longer apply; use the record written with the new export')
+    fp.require(a.status in CHECK_STATUSES, 'Invalid status')
+    if a.status in ('pass', 'fail'):
+        fp.require(a.evidence, f'{a.status} needs at least one --evidence file')
+    if a.status == 'not_applicable':
+        fp.require(a.note and a.note.strip(), 'not_applicable needs --note with the reason')
+    if a.reviewer == 'user' and a.status != 'not_run':
+        fp.require(a.confirmation and a.confirmation.strip(),
+                   '--reviewer user needs --confirmation: where the user confirmed it (quoted message with time, or '
+                   'a signed review file); the agent never writes the user\'s confirmation for them')
+    evidence = []
+    for e in a.evidence or []:
+        f = Path(e).resolve()
+        fp.require(f.is_file(), f'Evidence file not found: {e}')
+        evidence.append({'path': rel(f, base), 'sha256': fp.sha(f)})
+    frames = int(record.get('output_frames') or 0)
+    fp.require(frames > 0, 'Record has no output_frames')
+    c = checks[a.check]
+    c.update(status=a.status, source_intervals_checked=[parse_interval(i, frames) for i in a.intervals or []],
+             evidence=evidence, notes=a.note or '', reviewer=a.reviewer, output_sha256=current,
+             recorded_at=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'))
+    c.pop('confirmation', None)
+    if a.reviewer == 'user' and a.confirmation:
+        f = Path(a.confirmation)
+        c['confirmation'] = ({'path': rel(f, base), 'sha256': fp.sha(f)} if f.is_file()
+                             else {'quote': a.confirmation.strip()})
+    status, blocking = review_evaluate(path, record)
+    record['overall_visual_status'] = status
+    record['overall_status_evaluation'] = {'by': 'qc_tools.py review-set', 'output_sha256': current,
+                                           'blocking': blocking}
+    fp.replace_json(path, record)
+    return {'record': path.name, 'check': a.check, 'status': a.status, 'overall_visual_status': status,
+            'blocking': blocking}
+
+
+def cmd_review_status(a):
+    path = Path(a.record).resolve()
+    status, blocking = review_evaluate(path, json.loads(path.read_text(encoding='utf-8')))
+    return {'record': path.name, 'overall_visual_status': status, 'blocking': blocking}
+
+
+def brief(cmd, result):
+    """Summary for agents: per-frame lists dropped, everything else kept."""
+    out = dict(result)
+    drop = {'seam': ['frames'], 'precheck': ['samples']}.get(cmd, [])
+    for key, value in result.items():
+        if key in drop or (isinstance(value, list) and len(value) > 12 and key != 'blocking'):
+            out[key] = {'omitted_items': len(value) if isinstance(value, list) else None}
+    if any(isinstance(v, dict) and 'omitted_items' in v for v in out.values()):
+        out['detail'] = 'omitted (--brief); --json-out writes the full result'
+    return out
+
+
 def main():
     fp.utf8_console()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument('--brief', action='store_true', help='summary only; per-frame lists omitted')
+    common.add_argument('--json-out', metavar='PATH', help='also write the full result to this new file')
     sub = ap.add_subparsers(dest='cmd', required=True)
+    _add = sub.add_parser
+    sub.add_parser = lambda *x, **k: _add(*x, parents=[common], **k)
     s = sub.add_parser('green'); s.add_argument('--video', required=True)
     s.add_argument('--color-rgb', type=int, nargs=3, default=[0, 255, 0])
     s.add_argument('--tolerance', type=int, default=40); s.add_argument('--min-pixels', type=int, default=2000)
@@ -337,8 +557,23 @@ def main():
     s.add_argument('--threshold', type=float, default=12, help='high-frequency difference counted as large')
     s = sub.add_parser('precheck'); s.add_argument('--config', required=True)
     s.add_argument('--patch', type=int, default=0); s.add_argument('--samples', type=int, default=8)
+    s = sub.add_parser('review-set'); s.add_argument('--record', required=True)
+    s.add_argument('--check', required=True); s.add_argument('--status', required=True, choices=CHECK_STATUSES)
+    s.add_argument('--intervals', nargs='*', metavar='START:END', help='source frames reviewed, [START,END)')
+    s.add_argument('--evidence', nargs='*', help='evidence files (SHA-256 recorded)')
+    s.add_argument('--reviewer', choices=['agent', 'user'], default='agent')
+    s.add_argument('--confirmation', help='user reviews: quoted confirmation with time, or a signed review file')
+    s.add_argument('--note')
+    s = sub.add_parser('review-status'); s.add_argument('--record', required=True)
     a = ap.parse_args()
-    print(json.dumps(globals()['cmd_' + a.cmd](a), ensure_ascii=False))
+    json_out = fp.output_path(a.json_out) if a.json_out else None
+    fp.require(json_out is None or not json_out.exists(), '--json-out file exists; choose a new name')
+    result = globals()['cmd_' + a.cmd.replace('-', '_')](a)
+    text = json.dumps(result, ensure_ascii=False)
+    if json_out:
+        with fp.private_output(json_out) as f:
+            f.write(text+'\n')
+    print(json.dumps(brief(a.cmd, result), ensure_ascii=False) if a.brief else text)
 
 
 if __name__ == '__main__':

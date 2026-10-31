@@ -43,7 +43,7 @@ python scripts/flow_patch.py prepare --config "prepare.json" --output "upload.mp
 
 例如源核心`[48,120)`，上传实际从24帧开始，Flow完整保留上传帧序，则`generated_start=24`。若返回视频多出末尾3帧且前面同序，可只用已核对的对应索引；若少末帧，明确使用重复最后帧的`frame_map`，或以`null`保留原片，并审看边界。不能自动把全片拉长/压短。
 
-复制`assets/merge-template.json`，从对应prepare复制crop轨迹和工作尺寸；多段/多人添加patch对象。全片坐标仍以原片为准。输出只替换target，其余时间沿用原画面。
+用 `flow_patch.py init-merge --prepare-report upload.report.json --generated 返回片 --output merge.json` 从 prepare 报告生成补丁（crop 轨迹、工作尺寸、target、generated_start 不再手抄；多段/多人用 `--append`），遮罩留待设定、时间映射标为未核验，核对后用 `mark-timing` 记录依据，见[参数与命令](parameters.md)。也可以复制`assets/merge-template.json`手写。全片坐标仍以原片为准。输出只替换target，其余时间沿用原画面。
 
 可选辅助配准：
 
@@ -74,6 +74,6 @@ python scripts/flow_patch.py merge --config "merge-proposed.json" --output "patc
 
 ## 6. 复核与交付
 
-按[检查说明](verification.md)对实际最终编码文件执行验收，复制并填写[视觉验收记录](../assets/visual-review-template.json)，不能只审看未编码帧或低清预览。发现接缝、重影、色跳或口型错位先修，再复查相关区间并正常速度看完整段；未完成的项目保留待审，不填pass。
+按[检查说明](verification.md)对实际最终编码文件执行验收，在完整导出生成的 `*.visual-review.json` 上用 `qc_tools.py review-set` 逐项记录（整体状态由规则计算，见[参数与命令](parameters.md)），不能只审看未编码帧或低清预览。发现接缝、重影、色跳或口型错位先修，再复查相关区间并正常速度看完整段；未完成的项目保留待审，不填pass。
 
 交付成片、参数、`.report.json`和视觉记录，明确生成嘴/保留嘴、原音轨、源/生成帧数、缺帧策略和实际审看范围。独立补丁还应给同帧参照、摆放坐标/缩放、帧起点、遮罩含义和一次应用方式，并在原片局部做贴回验证；不得仅因补丁单独播放好看就判断能无缝贴回。项目配置含媒体路径，发给他人时改相对路径；不要附账号、令牌或无关个人目录。

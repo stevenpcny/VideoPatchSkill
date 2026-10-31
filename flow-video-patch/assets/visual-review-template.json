@@ -199,6 +199,19 @@
     "fail",
     "not_applicable"
   ],
+  "coverage_requirements": {
+    "repair_intervals": [
+      "all_repair_frames_contact_sheets",
+      "matte_false_positives_holes_occlusions_and_flicker",
+      "full_scene_and_closeup_normal_speed_playback",
+      "original_audio_lipsync_and_breaths"
+    ],
+    "join_windows": [
+      "ghosting_and_join_windows_frame_by_frame"
+    ],
+    "join_window_seconds": 0.5,
+    "note": "qc_tools.py review-set/review-status: a pass on these checks must list source_intervals_checked whose union covers every repair interval (or every patch start/end +/- join_window_seconds) of the technical report."
+  },
   "issues": [],
   "revisions_and_rechecks": [],
   "overall_visual_status": "pending_visual_review",
