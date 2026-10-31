@@ -1,0 +1,80 @@
+{
+  "local_regressions": [
+    {
+      "kernel": "numpy",
+      "suite": "smoke_test.py",
+      "exit_code": 0,
+      "seconds": 120.43591509999533
+    },
+    {
+      "kernel": "numpy",
+      "suite": "security_test.py",
+      "exit_code": 0,
+      "seconds": 3.082574100000784
+    },
+    {
+      "kernel": "numpy",
+      "suite": "qc_tools_test.py",
+      "exit_code": 0,
+      "seconds": 19.472566799995548
+    },
+    {
+      "kernel": "numpy",
+      "suite": "color_pipeline_test.py",
+      "exit_code": 0,
+      "seconds": 15.130585200000496
+    },
+    {
+      "kernel": "numpy",
+      "suite": "remote_run_test.py",
+      "exit_code": 0,
+      "seconds": 21.18038510000042
+    },
+    {
+      "kernel": "numpy",
+      "suite": "ffmpeg_regression.sh",
+      "exit_code": 0,
+      "seconds": 1.9107346000018879
+    },
+    {
+      "kernel": "native",
+      "suite": "smoke_test.py",
+      "exit_code": 0,
+      "seconds": 116.614997699995
+    },
+    {
+      "kernel": "native",
+      "suite": "security_test.py",
+      "exit_code": 0,
+      "seconds": 3.12205289999838
+    },
+    {
+      "kernel": "native",
+      "suite": "qc_tools_test.py",
+      "exit_code": 0,
+      "seconds": 18.91661010000098
+    },
+    {
+      "kernel": "native",
+      "suite": "color_pipeline_test.py",
+      "exit_code": 0,
+      "seconds": 14.386335299997882
+    },
+    {
+      "kernel": "native",
+      "suite": "remote_run_test.py",
+      "exit_code": 0,
+      "seconds": 20.834136700003
+    },
+    {
+      "kernel": "native",
+      "suite": "ffmpeg_regression.sh",
+      "exit_code": 0,
+      "seconds": 2.1148355999976047
+    }
+  ],
+  "initial_failure": "remote_run refused stale package hashes; regenerated manifest and passed rerun; no validation was bypassed",
+  "scope": "Windows synthetic; NumPy and native; Linux/macOS CI pending",
+  "reference": "top5-time-validation.json",
+  "production_source_sha256": "f9065f0b5e156fb34b6f5f24e4c456d492c006ae2f1930823e00107504942069"
+}

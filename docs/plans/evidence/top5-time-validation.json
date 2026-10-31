@@ -1,0 +1,1084 @@
+{
+  "baseline_profile": {
+    "commit": "28b7c5ab0cfe6eb4f77d6f7a839e39c7f2c403c0",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Synthetic 4K/240 frames, one 640px multiband return; warm OS cache; no publication/report assembly",
+    "runs": [
+      {
+        "wall": 26.66686770000524,
+        "stages": {},
+        "calls": {},
+        "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+        "output_bytes": 84127160,
+        "frames": 240,
+        "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a",
+        "instrumented": false
+      },
+      {
+        "wall": 26.911901300001773,
+        "stages": {
+          "input_validation": 1.6349422999992385,
+          "mask": 0.13659540000662673,
+          "blend": 5.5387168999805,
+          "plan_other": 0.009968099999241531,
+          "decoder_wait": 6.1532579000268015,
+          "source_chroma_layout": 1.8923946999420878,
+          "color_conversion": 2.4033812998459325,
+          "patch_transform": 6.1678275999074685,
+          "encoder_wait": 0.00955890003388049,
+          "render_other": 1.6621768002587487,
+          "output_validation": 1.3028660000054515
+        },
+        "calls": {
+          "input_validation": 2,
+          "mask": 241,
+          "blend": 241,
+          "plan_other": 1,
+          "decoder_wait": 720,
+          "source_chroma_layout": 240,
+          "color_conversion": 720,
+          "patch_transform": 240,
+          "encoder_wait": 241,
+          "render_other": 1,
+          "output_validation": 1
+        },
+        "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+        "output_bytes": 84127160,
+        "frames": 240,
+        "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a",
+        "instrumented": true
+      },
+      {
+        "wall": 27.0905819000036,
+        "stages": {
+          "input_validation": 1.5656710999974166,
+          "mask": 0.1372076999541605,
+          "blend": 5.52877479999006,
+          "plan_other": 0.009882999998808373,
+          "decoder_wait": 6.428124199876038,
+          "source_chroma_layout": 1.8927727000118466,
+          "color_conversion": 2.317855400055123,
+          "patch_transform": 6.218607399998291,
+          "encoder_wait": 0.008423099949141033,
+          "render_other": 1.6715382001639227,
+          "output_validation": 1.3115377000067383
+        },
+        "calls": {
+          "input_validation": 2,
+          "mask": 241,
+          "blend": 241,
+          "plan_other": 1,
+          "decoder_wait": 720,
+          "source_chroma_layout": 240,
+          "color_conversion": 720,
+          "patch_transform": 240,
+          "encoder_wait": 241,
+          "render_other": 1,
+          "output_validation": 1
+        },
+        "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+        "output_bytes": 84127160,
+        "frames": 240,
+        "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a",
+        "instrumented": true
+      },
+      {
+        "wall": 26.789095699998143,
+        "stages": {},
+        "calls": {},
+        "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+        "output_bytes": 84127160,
+        "frames": 240,
+        "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a",
+        "instrumented": false
+      }
+    ],
+    "ranking": [
+      {
+        "stage": "decoder_wait",
+        "seconds": 6.29069104995142
+      },
+      {
+        "stage": "patch_transform",
+        "seconds": 6.19321749995288
+      },
+      {
+        "stage": "blend",
+        "seconds": 5.53374584998528
+      },
+      {
+        "stage": "color_conversion",
+        "seconds": 2.3606183499505278
+      },
+      {
+        "stage": "source_chroma_layout",
+        "seconds": 1.8925836999769672
+      },
+      {
+        "stage": "render_other",
+        "seconds": 1.6668575002113357
+      },
+      {
+        "stage": "input_validation",
+        "seconds": 1.6003066999983275
+      },
+      {
+        "stage": "output_validation",
+        "seconds": 1.307201850006095
+      },
+      {
+        "stage": "mask",
+        "seconds": 0.1369015499803936
+      },
+      {
+        "stage": "plan_other",
+        "seconds": 0.009925549999024952
+      },
+      {
+        "stage": "encoder_wait",
+        "seconds": 0.008990999991510762
+      }
+    ],
+    "top5": [
+      {
+        "stage": "decoder_wait",
+        "seconds": 6.29069104995142
+      },
+      {
+        "stage": "patch_transform",
+        "seconds": 6.19321749995288
+      },
+      {
+        "stage": "blend",
+        "seconds": 5.53374584998528
+      },
+      {
+        "stage": "color_conversion",
+        "seconds": 2.3606183499505278
+      },
+      {
+        "stage": "source_chroma_layout",
+        "seconds": 1.8925836999769672
+      }
+    ],
+    "instrumentation_overhead_percent": 1.0223738667142879
+  },
+  "stage_experiments": {
+    "scope": "isolated real production stage calls, 240 frames; cache construction included per run; quality excluded from timing",
+    "pairs": 5,
+    "quality": {
+      "decoder_wait": {
+        "exact": true,
+        "reference_sha256": "f8c0f116c5e590c3b4ca8ca39f2f32a35b11912203fe7136be6964d428076bfa",
+        "candidate_sha256": "f8c0f116c5e590c3b4ca8ca39f2f32a35b11912203fe7136be6964d428076bfa"
+      },
+      "patch_transform": {
+        "exact": true,
+        "reference_sha256": "c8f94f5f5a9abf1d67a67948464f6ad23cd6c949526e77765a331cf01b3bb40c",
+        "candidate_sha256": "c8f94f5f5a9abf1d67a67948464f6ad23cd6c949526e77765a331cf01b3bb40c"
+      },
+      "blend": {
+        "exact": true,
+        "reference_sha256": "4c0dd7436187f5bd56d8b9d48c78f315eb396aa65abd30f61e6d541cad770ae3",
+        "candidate_sha256": "4c0dd7436187f5bd56d8b9d48c78f315eb396aa65abd30f61e6d541cad770ae3"
+      },
+      "color_conversion": {
+        "exact": true,
+        "reference_sha256": "8110365b3eb059dca92b403c1ea6a0a61e94be7e2d140d3285c12aea3cef654f",
+        "candidate_sha256": "8110365b3eb059dca92b403c1ea6a0a61e94be7e2d140d3285c12aea3cef654f"
+      },
+      "source_chroma_layout": {
+        "exact": true,
+        "reference_sha256": "e5c540e203ca96c3d947c32a328b80c9f955d60e93eda992ab44539c10637498",
+        "candidate_sha256": "e5c540e203ca96c3d947c32a328b80c9f955d60e93eda992ab44539c10637498"
+      }
+    },
+    "stages": {
+      "decoder_wait": {
+        "aa": [
+          [
+            13.957926799994311,
+            14.143271099994308
+          ],
+          [
+            13.937564400002884,
+            14.005580299999565
+          ],
+          [
+            13.96950609999476,
+            13.905255599995144
+          ]
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 15.383798000002571,
+            "B": 13.707583999996132
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 13.43817890000355,
+            "A": 13.730966199997056
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 14.272968099998252,
+            "B": 13.424120099996799
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 13.957763899998099,
+            "A": 13.914271599998756
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 14.658481099999335,
+            "B": 14.48387840000214
+          }
+        ],
+        "A": {
+          "median": 14.272968099998252,
+          "mad": 0.38551300000108313,
+          "minimum": 13.730966199997056,
+          "maximum": 15.383798000002571
+        },
+        "B": {
+          "median": 13.707583999996132,
+          "mad": 0.2694050999925821,
+          "minimum": 13.424120099996799,
+          "maximum": 14.48387840000214
+        },
+        "saving_percent": 3.961223033926553
+      },
+      "patch_transform": {
+        "aa": [
+          [
+            6.243992599993362,
+            6.4148878999985754
+          ],
+          [
+            6.264998400001787,
+            6.284695299997111
+          ],
+          [
+            6.353745000000345,
+            6.230436099998769
+          ]
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 6.270822400001634,
+            "B": 1.0660848999978043
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 1.0679798999990453,
+            "A": 6.29477510000288
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 6.313671299998532,
+            "B": 1.0797413000036613
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 1.0826444999984233,
+            "A": 6.261790099997597
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 6.360719699994661,
+            "B": 1.0874890999984927
+          }
+        ],
+        "A": {
+          "median": 6.29477510000288,
+          "mad": 0.02395270000124583,
+          "minimum": 6.261790099997597,
+          "maximum": 6.360719699994661
+        },
+        "B": {
+          "median": 1.0797413000036613,
+          "mad": 0.007747799994831439,
+          "minimum": 1.0660848999978043,
+          "maximum": 1.0874890999984927
+        },
+        "saving_percent": 82.84702339876817
+      },
+      "blend": {
+        "aa": [
+          [
+            5.66649260000122,
+            5.61148079999839
+          ],
+          [
+            5.450291600005585,
+            5.582437899996876
+          ],
+          [
+            5.433888699997624,
+            5.681633899999724
+          ]
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 5.569686399998318,
+            "B": 5.768345399999816
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 5.643905400000222,
+            "A": 5.625081799997133
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 5.610413000002154,
+            "B": 5.727510599994275
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 5.721776400001545,
+            "A": 5.544030099998054
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 5.705644599998777,
+            "B": 5.703226199999335
+          }
+        ],
+        "A": {
+          "median": 5.610413000002154,
+          "mad": 0.04072660000383621,
+          "minimum": 5.544030099998054,
+          "maximum": 5.705644599998777
+        },
+        "B": {
+          "median": 5.721776400001545,
+          "mad": 0.01855020000220975,
+          "minimum": 5.643905400000222,
+          "maximum": 5.768345399999816
+        },
+        "saving_percent": -1.9849412155459545
+      },
+      "color_conversion": {
+        "aa": [
+          [
+            2.1288759999952163,
+            2.1524581000048784
+          ],
+          [
+            2.104712500004098,
+            2.1733549000055064
+          ],
+          [
+            2.1338773999959812,
+            2.133928000002925
+          ]
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.146078600002511,
+            "B": 5.714483700001438
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 5.711838799994439,
+            "A": 2.0866116999968654
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 1.9397879000025569,
+            "B": 5.68324759999814
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 5.692628299999342,
+            "A": 1.9658137000005809
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.0583155999993323,
+            "B": 5.706590300003882
+          }
+        ],
+        "A": {
+          "median": 2.0583155999993323,
+          "mad": 0.0877630000031786,
+          "minimum": 1.9397879000025569,
+          "maximum": 2.146078600002511
+        },
+        "B": {
+          "median": 5.706590300003882,
+          "mad": 0.007893399997556116,
+          "minimum": 5.68324759999814,
+          "maximum": 5.714483700001438
+        },
+        "saving_percent": -177.24564201941297
+      },
+      "source_chroma_layout": {
+        "aa": [
+          [
+            1.961717400001362,
+            1.954932499997085
+          ],
+          [
+            2.0096858000033535,
+            1.9989572999984375
+          ],
+          [
+            2.0195655999996234,
+            2.025283800001489
+          ]
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 1.9721578000026057,
+            "B": 3.781887299999653
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 3.7995114000004833,
+            "A": 1.9675193000002764
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.005555199997616,
+            "B": 3.789008100000501
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 3.772009000000253,
+            "A": 1.9737204999983078
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.0443273999990197,
+            "B": 3.838753699994413
+          }
+        ],
+        "A": {
+          "median": 1.9737204999983078,
+          "mad": 0.00620119999803137,
+          "minimum": 1.9675193000002764,
+          "maximum": 2.0443273999990197
+        },
+        "B": {
+          "median": 3.789008100000501,
+          "mad": 0.010503299999982119,
+          "minimum": 3.772009000000253,
+          "maximum": 3.838753699994413
+        },
+        "saving_percent": -91.97288065882428
+      }
+    },
+    "extra_quality_controls": 60
+  },
+  "lut_only_cli": {
+    "commit": "28b7c5ab0cfe6eb4f77d6f7a839e39c7f2c403c0",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Complete actual main() --preview at 4K/240 frames in fresh Python processes and empty task probe caches (warm OS cache), includes input prefetch, source/return/output hashes, strict output/audio checks, tool inventory, report and publication. No resolution/duration changes.",
+    "runs": [
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 27.82682680000289,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 26.851497200004815,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "B",
+          "A"
+        ],
+        "B": {
+          "wall": 26.88455220000469,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "A": {
+          "wall": 27.677793199996813,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 28.36506649999501,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 27.3622686000017,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "B",
+          "A"
+        ],
+        "B": {
+          "wall": 26.32560459999513,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "A": {
+          "wall": 27.97371589999966,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 27.88934380000137,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 26.56253250000009,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      }
+    ],
+    "selected": [
+      "patch_transform"
+    ],
+    "A": {
+      "median": 27.88934380000137,
+      "mad": 0.08437209999829065,
+      "minimum": 27.677793199996813,
+      "maximum": 28.36506649999501
+    },
+    "B": {
+      "median": 26.851497200004815,
+      "mad": 0.2889647000047262,
+      "minimum": 26.32560459999513,
+      "maximum": 27.3622686000017
+    },
+    "saving_percent": 3.7213016105330676,
+    "candidate_profile": {
+      "wall": 25.00732229999994,
+      "stages": {
+        "input_validation": 1.5670630000022356,
+        "mask": 0.1349487999759731,
+        "blend": 5.745379000014509,
+        "plan_other": 0.01405920000252081,
+        "decoder_wait": 9.372542599929147,
+        "source_chroma_layout": 1.8868675000194344,
+        "color_conversion": 2.3432475000736304,
+        "patch_transform": 0.9397595000336878,
+        "encoder_wait": 0.008438700038823299,
+        "render_other": 1.6924980999101535,
+        "output_validation": 1.301787800002785
+      },
+      "calls": {
+        "input_validation": 2,
+        "mask": 241,
+        "blend": 241,
+        "plan_other": 1,
+        "decoder_wait": 720,
+        "source_chroma_layout": 240,
+        "color_conversion": 720,
+        "patch_transform": 240,
+        "encoder_wait": 241,
+        "render_other": 1,
+        "output_validation": 1
+      },
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "output_bytes": 84127160,
+      "frames": 240,
+      "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+    }
+  },
+  "pipe_lut_pilot": {
+    "commit": "28b7c5ab0cfe6eb4f77d6f7a839e39c7f2c403c0",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Complete actual main() --preview at 4K/240 frames in fresh Python processes and empty task probe caches (warm OS cache), includes input prefetch, source/return/output hashes, strict output/audio checks, tool inventory, report and publication. No resolution/duration changes.",
+    "runs": [
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 27.975883799997973,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 19.56248410000262,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      }
+    ],
+    "selected": [
+      "patch_transform",
+      "pipe_capacity"
+    ],
+    "A": {
+      "median": 27.975883799997973,
+      "mad": 0.0,
+      "minimum": 27.975883799997973,
+      "maximum": 27.975883799997973
+    },
+    "B": {
+      "median": 19.56248410000262,
+      "mad": 0.0,
+      "minimum": 19.56248410000262,
+      "maximum": 19.56248410000262
+    },
+    "saving_percent": 30.073758384698333,
+    "candidate_profile": {
+      "wall": 18.72996840000269,
+      "stages": {
+        "input_validation": 1.612053900003957,
+        "mask": 0.13782979996176437,
+        "blend": 6.039518900055555,
+        "plan_other": 0.011748199998692144,
+        "decoder_wait": 0.7081252001371467,
+        "source_chroma_layout": 3.8122286000216263,
+        "color_conversion": 2.447777299952577,
+        "patch_transform": 0.9918142001042725,
+        "encoder_wait": 0.007971000042743981,
+        "render_other": 1.6905614997231169,
+        "output_validation": 1.2697974999973667
+      },
+      "calls": {
+        "input_validation": 2,
+        "mask": 241,
+        "blend": 241,
+        "plan_other": 1,
+        "decoder_wait": 720,
+        "source_chroma_layout": 240,
+        "color_conversion": 720,
+        "patch_transform": 240,
+        "encoder_wait": 241,
+        "render_other": 1,
+        "output_validation": 1
+      },
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "output_bytes": 84127160,
+      "frames": 240,
+      "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+    }
+  },
+  "pipe_lut_cli": {
+    "commit": "28b7c5ab0cfe6eb4f77d6f7a839e39c7f2c403c0",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Complete actual main() --preview at 4K/240 frames in fresh Python processes and empty task probe caches (warm OS cache), includes input prefetch, source/return/output hashes, strict output/audio checks, tool inventory, report and publication. No resolution/duration changes.",
+    "runs": [
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 27.765146499994444,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 19.542771899999934,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "B",
+          "A"
+        ],
+        "B": {
+          "wall": 19.612596400002076,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "A": {
+          "wall": 28.298886500000663,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 27.534379999997327,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 19.735238699999172,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "B",
+          "A"
+        ],
+        "B": {
+          "wall": 19.523993099996005,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "A": {
+          "wall": 27.336977200000547,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 27.67739630000142,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 19.53560329999891,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      }
+    ],
+    "selected": [
+      "patch_transform",
+      "pipe_capacity"
+    ],
+    "A": {
+      "median": 27.67739630000142,
+      "mad": 0.14301630000409205,
+      "minimum": 27.336977200000547,
+      "maximum": 28.298886500000663
+    },
+    "B": {
+      "median": 19.542771899999934,
+      "mad": 0.018778800003929064,
+      "minimum": 19.523993099996005,
+      "maximum": 19.735238699999172
+    },
+    "saving_percent": 29.390858561363554,
+    "candidate_profile": {
+      "wall": 18.67687450000085,
+      "stages": {
+        "input_validation": 1.561435599993274,
+        "mask": 0.136025900093955,
+        "blend": 6.074358899939398,
+        "plan_other": 0.012377200000628363,
+        "decoder_wait": 0.7006542000090121,
+        "source_chroma_layout": 3.7955898000800516,
+        "color_conversion": 2.4584187001382816,
+        "patch_transform": 0.9488976999637089,
+        "encoder_wait": 0.00838740001199767,
+        "render_other": 1.6848057997631258,
+        "output_validation": 1.2952396999971825
+      },
+      "calls": {
+        "input_validation": 2,
+        "mask": 241,
+        "blend": 241,
+        "plan_other": 1,
+        "decoder_wait": 720,
+        "source_chroma_layout": 240,
+        "color_conversion": 720,
+        "patch_transform": 240,
+        "encoder_wait": 241,
+        "render_other": 1,
+        "output_validation": 1
+      },
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "output_bytes": 84127160,
+      "frames": 240,
+      "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+    }
+  },
+  "extra_full_pipeline_quality": {
+    "selected": [
+      "patch_transform",
+      "pipe_capacity"
+    ],
+    "exact": true,
+    "cases": [
+      {
+        "case": "alpha_dynamic_protect_fade_affine_none_repeat",
+        "A": {
+          "sha256": "842eeb03e20dc598245eddc1dd4e2c5f278bb9290d68082b6e050995d3ec497f",
+          "frames": 24,
+          "audio": "SHA256=509a38c25323045b42fed47d660f546127aa678a644e0f867eb2628f1b9dee6b"
+        },
+        "B": {
+          "sha256": "842eeb03e20dc598245eddc1dd4e2c5f278bb9290d68082b6e050995d3ec497f",
+          "frames": 24,
+          "audio": "SHA256=509a38c25323045b42fed47d660f546127aa678a644e0f867eb2628f1b9dee6b"
+        },
+        "handles_after_pair": 364
+      },
+      {
+        "case": "multiband_fade",
+        "A": {
+          "sha256": "fce1a3d08c3e47ddb5fedbbac0f67ccf58d3042f097ec273565b2b8e077a0a14",
+          "frames": 24,
+          "audio": "SHA256=509a38c25323045b42fed47d660f546127aa678a644e0f867eb2628f1b9dee6b"
+        },
+        "B": {
+          "sha256": "fce1a3d08c3e47ddb5fedbbac0f67ccf58d3042f097ec273565b2b8e077a0a14",
+          "frames": 24,
+          "audio": "SHA256=509a38c25323045b42fed47d660f546127aa678a644e0f867eb2628f1b9dee6b"
+        },
+        "handles_after_pair": 364
+      },
+      {
+        "case": "scaled_work_size",
+        "A": {
+          "sha256": "61af21aab687bce4ff27f6211c637791a7c9a642a711b776bda5da81be2c1ce4",
+          "frames": 24,
+          "audio": "SHA256=509a38c25323045b42fed47d660f546127aa678a644e0f867eb2628f1b9dee6b"
+        },
+        "B": {
+          "sha256": "61af21aab687bce4ff27f6211c637791a7c9a642a711b776bda5da81be2c1ce4",
+          "frames": 24,
+          "audio": "SHA256=509a38c25323045b42fed47d660f546127aa678a644e0f867eb2628f1b9dee6b"
+        },
+        "handles_after_pair": 364
+      }
+    ],
+    "failed_start_handle_count": 364,
+    "failed_start_cleanup": "pass"
+  },
+  "fixture_recreated_exact": {
+    "source_exact": true,
+    "return_exact": true
+  },
+  "host": {
+    "os": "Windows-11-10.0.22631-SP0",
+    "cpu": "Intel Core i9-13900K",
+    "cores": 24,
+    "logical_processors": 32
+  },
+  "production_manifest": {
+    "matches": 50,
+    "total": 50
+  },
+  "benchmark_source_sha256": "32a518804602547e88eee149e9920eadfb16ccc84b7fe0f97b68c07a86b9f529",
+  "fixture_hashes": {
+    "source_sha256": "721d659a51afb436a806c94308357db20ec7fb59ba0031dd9f6da13c19c8a85d",
+    "returned_sha256": "532e5f812c410c5e5fa600ee2ccabfc877a438678b68614e399aba515a7576ad"
+  },
+  "not_run": [
+    "six full release regression suites: production package unchanged; development prototype only",
+    "cold OS-cache",
+    "physical I/O",
+    "process-tree peak RSS",
+    "thermal/frequency telemetry",
+    "8K/multi-person long-form/10bit/HDR",
+    "user visual acceptance"
+  ],
+  "harness_setup_failures": [
+    {
+      "case": "initial matrix quality gate",
+      "reason": "unsupported internal alias smpte170m, fixed to enumerate KR_KB; failed before timing"
+    },
+    {
+      "case": "first fixture generator invocation",
+      "reason": "existence validation before first encode, moved source input construction to a valid file-only absolute path; failed before encoding"
+    }
+  ]
+}

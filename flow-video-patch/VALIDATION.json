@@ -753,5 +753,29 @@
       "No fresh vulnerability scan; historical reviews are not current approval",
       "Windows/Linux not executed in this merge; repository-line Windows notes remain historical"
     ]
+  },
+  "windows_pipe_lut_followup": {
+    "date": "2026-10-31",
+    "scope": "Unreleased production implementation; synthetic fixtures; no user visual acceptance",
+    "runtime": "Windows i9-13900K; CPython3.13.16; NumPy2.5.4; OpenCV5.0.0.93; FFmpeg9.0.2",
+    "changes": [
+      "Reader-only 1MiB Windows pipe with explicit handle/fd/stream ownership; non-Windows standard pipe unchanged",
+      "uint8 color LUT, float64 reference rounding, parameter-keyed LRU32, immutable table arrays"
+    ],
+    "local_regression_per_kernel": {
+      "smoke": "30 passed",
+      "security": "14 passed, 2 Windows-specific skips",
+      "qc_tools": "9 passed",
+      "color_pipeline": "9 passed",
+      "remote_run": "4 passed; fake local SSH only",
+      "ffmpeg_regression": "6 passed"
+    },
+    "kernels": [
+      "numpy",
+      "native"
+    ],
+    "cross_platform_ci": "pending",
+    "performance_reference": "docs/plans/top5-time-validation.md: prototype paired CLI29.39% improvement; actual production timing recorded separately",
+    "historical_release_archives": "not rebuilt; this is an unreleased change"
   }
 }
