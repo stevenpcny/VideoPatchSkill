@@ -1,0 +1,90 @@
+{
+  "baseline": {
+    "main": "401f8dadef2382d98e8a653dde2aa4a069f1310c",
+    "latest_skill_measured": "8b7525d07e669f52d9f31840e15bd99a4048c0c6 (PR #20 head = main + 7 performance commits)",
+    "doc_difference_main_vs_measured": "references/parameters.md one paragraph; estimates differ by ~115 tokens"
+  },
+  "environment": {
+    "os": "Linux (cloud container)",
+    "python": "3.13.18",
+    "numpy": "2.5.3",
+    "opencv": "opencv-python-headless 5.0.0",
+    "ffmpeg": "6.1.1 (Ubuntu build)",
+    "kernels": "numpy (native not built)"
+  },
+  "documentation": {
+    "method": "heuristic: 1 token per CJK char + 1 per 3.2 other chars; whole-file reads",
+    "per_file_estimated_tokens": {
+      "AGENT_ENTRY.md": 587,
+      "CHANGELOG.md": 7076,
+      "SECURITY.md": 1871,
+      "SKILL.md": 6738,
+      "TOOL_POLICY.json": 1692,
+      "VALIDATION.json": 13741,
+      "assets/resolve-handoff-template.json": 473,
+      "assets/visual-review-template.json": 2126,
+      "references/advanced-compositing.md": 2604,
+      "references/cases.md": 1860,
+      "references/field-lessons.md": 1910,
+      "references/hd-relay-lessons.md": 4101,
+      "references/install.md": 1378,
+      "references/native-kernels.md": 775,
+      "references/overlap-and-local-donors.md": 3230,
+      "references/parameters.md": 4402,
+      "references/patch-lessons.md": 2817,
+      "references/prompts.md": 2174,
+      "references/remote-worker.md": 4154,
+      "references/resolve-project-handoff.md": 2819,
+      "references/return-fit-assessment.md": 3787,
+      "references/skin-match.md": 1370,
+      "references/tool-policy.md": 2181,
+      "references/validation.md": 3082,
+      "references/verification.md": 4774,
+      "references/workflow.md": 2724
+    },
+    "scenarios": {
+      "first_task_single_return": {
+        "files": 13,
+        "estimated_tokens": 37783
+      },
+      "repeat_task_single_return": {
+        "files": 8,
+        "estimated_tokens": 26498
+      },
+      "complex_multi_person": {
+        "files": 20,
+        "estimated_tokens": 54240
+      }
+    }
+  },
+  "synthetic_run": {
+    "media": "ffmpeg testsrc2 1280x720 24fps 240 frames + sine AAC; prepare core [48,144), context 24, crop 360x640, upload used as its own return (identity)",
+    "stdout_bytes": {
+      "doctor": 753,
+      "inspect": 450,
+      "prep_dry": 1299,
+      "prep": 72,
+      "merge_dry": 3447,
+      "precheck": 3696,
+      "seam": 15868,
+      "fit": 46,
+      "check": 100,
+      "full": 159
+    },
+    "stdout_bytes_note": "seam prints one row per measured frame (~165 B/frame): 96 frames here; scales linearly with target length",
+    "artifact_bytes": {
+      "upload.report.json": 3483,
+      "check.report.json": 4234,
+      "patched.report.json": 4050,
+      "patched.visual-review.json": 7685,
+      "proposed.json": 46940
+    },
+    "artifact_note": "proposed.json from fit_patch holds a per-frame keyframed affine and is pretty-printed with indent=2",
+    "visual_review_prefilled": {
+      "checks_total": 25,
+      "prefilled_pass": 2,
+      "left_not_run": 23
+    }
+  },
+  "limits": "Static estimates and byte counts on synthetic media only. No real agent session transcripts were measured; no claim about real-task token totals or quality."
+}
