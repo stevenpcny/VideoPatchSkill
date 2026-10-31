@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """qc_tools behavioral checks with disposable synthetic media only."""
+import argparse
+import collections
+import contextlib
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import cv2
 import numpy as np
@@ -98,6 +104,55 @@ class QcTools(unittest.TestCase):
     def test_sharpness_reports_per_frame(self):
         r = qc('sharpness', '--video', self.up, '--region', 0, 0, 160, 100)
         self.assertEqual(len(r['per_frame']), 30); self.assertGreater(r['median'], 0)
+
+    def counting(self, fp):
+        """Count full decoding passes per file name until the test ends."""
+        counts = collections.Counter(); original = fp.decode_pass
+        def counted(path, strict=False):
+            counts[(Path(path).name, strict)] += 1
+            return original(path, strict)
+        fp.decode_pass = counted
+        self.addCleanup(setattr, fp, 'decode_pass', original)
+        return counts
+
+    def test_precheck_decodes_each_input_once_with_identical_result(self):
+        import flow_patch as fp
+        import qc_tools
+        base = Path(self.tmp.name); gen = base/'shared-gen.mp4'
+        shutil.copyfile(self.up, gen)  # a distinct file, so source and return are counted apart
+        cfg = base/'shared.json'
+        cfg.write_text(json.dumps(dict(schema_version=1, source=str(self.up), source_size=[160, 160], fps=24,
+            patches=[dict(generated=str(gen), target=[0, 30], crop=[0, 0, 160, 160], work_size=[160, 160],
+                          matte=dict(region=[50, 30, 60, 60], feather=8))])), encoding='utf-8')
+        a = argparse.Namespace(config=str(cfg), patch=0, samples=4)
+        counts = self.counting(fp)
+        shared = qc_tools.cmd_precheck(a)
+        self.assertEqual(dict(counts), {('up.mp4', False): 1, ('shared-gen.mp4', False): 1})
+        self.assertIsNone(fp._SHARED)  # nothing outlives the command
+        counts.clear()
+        with mock.patch.object(fp, 'shared_probes', contextlib.nullcontext):
+            unshared = qc_tools.cmd_precheck(a)  # the previous per-step probing
+        self.assertEqual(dict(counts), {('up.mp4', False): 2, ('shared-gen.mp4', False): 4})
+        self.assertEqual(json.dumps(shared, sort_keys=True), json.dumps(unshared, sort_keys=True))
+
+    def test_shared_probe_rereads_replaced_file_and_strict_requests(self):
+        import flow_patch as fp
+        base = Path(self.tmp.name); clip = base/'replaced.mp4'; other = base/'replacement.mp4'
+        shutil.copyfile(self.up, clip); encode(other, self.frames[:20])
+        counts = self.counting(fp)
+        with fp.shared_probes():
+            self.assertEqual(fp.probe(clip)['frames'], 30)
+            self.assertEqual(fp.probe(clip)['frames'], 30)
+            self.assertEqual(counts[('replaced.mp4', False)], 1)
+            fp.probe(clip, strict=True)                    # strict checks never reuse a weaker pass
+            self.assertEqual(counts[('replaced.mp4', True)], 1)
+            os.replace(other, clip)                        # same path, new file
+            self.assertEqual(fp.probe(clip)['frames'], 20)
+            self.assertEqual(counts[('replaced.mp4', False)], 2)
+            fp.probe(clip)['frames'] = -1                  # callers get copies
+            self.assertEqual(fp.probe(clip)['frames'], 20)
+        fp.probe(clip)                                     # outside a scope: decoded again
+        self.assertEqual(counts[('replaced.mp4', False)], 3)
 
 
 if __name__ == '__main__':

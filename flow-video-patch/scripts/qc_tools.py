@@ -14,6 +14,7 @@ All frame indices are zero-based. Rectangles are x,y,w,h in the measured video's
 Results are evidence for a human decision, not proof of identity, lip sync or a seamless merge.
 """
 import argparse
+import functools
 import json
 from pathlib import Path
 import sys
@@ -23,6 +24,15 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import flow_patch as fp  # noqa: E402
+
+
+def shared_probes(cmd):
+    """Each input is fully decoded once per command, however many steps probe it (fp.shared_probes)."""
+    @functools.wraps(cmd)
+    def run(a):
+        with fp.shared_probes():
+            return cmd(a)
+    return run
 
 
 def frames(path):
@@ -57,6 +67,7 @@ def gray_region(f, r):
     return cv2.cvtColor(f[y:y+h, x:x+w], cv2.COLOR_BGR2GRAY).astype(np.float32)
 
 
+@shared_probes
 def cmd_offset(a):
     U = [gray_region(f, a.region) for _, f in frames(a.upload)]
     G = [gray_region(f, a.region) for _, f in frames(a.returned)]
@@ -136,6 +147,7 @@ def cmd_slit(a):
     return {'image': str(out), 'x_axis': 'frame index * zoom', 'y_axis': f'box-relative rows {a.rows[0]}..{a.rows[1]} * zoom*2'}
 
 
+@shared_probes
 def cmd_seam(a):
     """Score one patch's seam exactly as merge would blend it (references/return-fit-assessment.md 5)."""
     cfg = fp.load(Path(a.config).resolve()); info = fp.validate_source(cfg)
@@ -180,6 +192,7 @@ def cmd_seam(a):
             'note': 'Compare candidates of the same shot; lower is a less visible seam. Not visual acceptance.'}
 
 
+@shared_probes
 def cmd_precheck(a):
     """references/return-fit-assessment.md section 1 as numbers; people still judge blinks, expression,
     identity and performance. Geometry uses everything outside the (dilated) patch matte."""

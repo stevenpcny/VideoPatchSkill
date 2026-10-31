@@ -8,6 +8,7 @@ import argparse
 import bisect
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 import contextlib
+import copy
 import ctypes
 import functools
 import importlib.metadata
@@ -446,13 +447,47 @@ def forget(path):
     key = str(Path(path).expanduser().resolve())
     _PROBED.pop(key, None)
     _PASSES.pop(key, None)
+    if _SHARED is not None:
+        _SHARED.pop(key, None)
+
+
+_SHARED = None  # {path: (identity, info)} while one check command shares its probes
+
+
+def file_identity(path):
+    st = os.stat(path)
+    return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns
+
+
+@contextlib.contextmanager
+def shared_probes():
+    """Within one read-only check command, a file probed again while its identity (device, inode,
+    size, mtime) is unchanged reuses the first full decoding pass. Never used for merges or output
+    checks; strict probes always decode again. Nested scopes share the outermost one."""
+    global _SHARED
+    outer = _SHARED
+    if outer is None:
+        _SHARED = {}
+    try:
+        yield
+    finally:
+        _SHARED = outer
 
 
 def probe(path, strict=False):
     path = local_media(path)
     if path in _PROBED:
         return _PROBED[path].result()
-    return _probe(path, strict)
+    if _SHARED is None or strict:
+        return _probe(path, strict)
+    before = file_identity(path)
+    hit = _SHARED.get(path)
+    if hit is not None and hit[0] == before:
+        return copy.deepcopy(hit[1])
+    info = _probe(path)
+    require(file_identity(path) == before, 'Input changed while it was being probed')
+    _SHARED[path] = (before, copy.deepcopy(info))
+    return info
 
 
 def _probe(path, strict=False):
