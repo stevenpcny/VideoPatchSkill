@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "package_version": "2.9",
+  "baseline_commit": "401f8dadef2382d98e8a653dde2aa4a069f1310c",
+  "manifest_entries_verified": 49,
+  "package_manifest_sha256": "ca7e278408eba4db53ea1b7110f95dc820b51b8664f48dc0ecf5cb4e331a137e",
+  "environment": {
+    "os": "Windows",
+    "python": "3.13.16",
+    "numpy": "2.5.4",
+    "opencv": "opencv-python 5.0.0.93",
+    "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+    "flow_overrides": {
+      "FLOW_KERNELS": "numpy",
+      "FLOW_PROCESS_THREADS": "4",
+      "FLOW_ENCODE_THREADS": "4"
+    }
+  },
+  "precheck": {
+    "decode_pass_total": 6,
+    "decode_pass_source": 2,
+    "decode_pass_generated": 4,
+    "reader_total": 4,
+    "wall_seconds": 1.712034,
+    "provisional_call": "fits",
+    "frames_sampled": 8,
+    "source_frames": 30,
+    "generated_frames": 30,
+    "size": [
+      192,
+      128
+    ],
+    "note": "Single instrumented run; counts are evidence, timing is not a speed claim."
+  },
+  "static_memory_model": {
+    "reader_queue_depth": 3,
+    "raw_8k_frame_bytes": 99532800,
+    "three_8k_readers_queued_bytes": 895795200,
+    "note": "Queue payload lower bound only; excludes current/in-flight frames, BGR, pyramids, encoder and decoder."
+  },
+  "speedup_measured": false,
+  "visual_acceptance": "not_run"
+}
