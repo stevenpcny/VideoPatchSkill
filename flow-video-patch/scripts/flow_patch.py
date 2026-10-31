@@ -590,6 +590,48 @@ def rectangle(value, frame, size):
     return x, y, w, h
 
 
+def decoder_process(argv, stderr):
+    """Reader-only stdout pipe. Windows' small default pipe stalls large raw frames.
+
+    Request 1 MiB per active decoder; preserve Popen's child handle
+    duplication and the original pipe on other platforms. Never changes pixels.
+    """
+    if sys.platform != 'win32':
+        return subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=stderr)
+    from ctypes import wintypes
+    import msvcrt
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreatePipe
+    create.argtypes = [ctypes.POINTER(wintypes.HANDLE), ctypes.POINTER(wintypes.HANDLE),
+                       ctypes.c_void_p, wintypes.DWORD]
+    create.restype = wintypes.BOOL
+    close = kernel.CloseHandle
+    close.argtypes, close.restype = [wintypes.HANDLE], wintypes.BOOL
+    rh, wh = wintypes.HANDLE(), wintypes.HANDLE()
+    if not create(ctypes.byref(rh), ctypes.byref(wh), None, 1024*1024):
+        raise ctypes.WinError(ctypes.get_last_error())
+    with contextlib.ExitStack() as cleanup:
+        for handle in (rh, wh):
+            cleanup.callback(lambda h=handle: close(h) if h.value else None)
+        streams = []
+        for handle, flags, mode in ((rh, os.O_RDONLY, 'rb'), (wh, os.O_WRONLY, 'wb')):
+            fd = msvcrt.open_osfhandle(handle.value, flags | os.O_BINARY)
+            handle.value = None  # fd now owns the native handle.
+            try:
+                stream = os.fdopen(fd, mode)
+            except BaseException:
+                os.close(fd)
+                raise
+            cleanup.callback(stream.close)
+            streams.append(stream)
+        reader, writer = streams
+        process = subprocess.Popen(argv, stdout=writer, stderr=stderr)
+        writer.close()  # only the child keeps its duplicated write end
+        process.stdout = reader
+        cleanup.pop_all()  # Reader.close owns stdout from here.
+        return process
+
+
 class Reader:
     """Sequential decoder; permits repeated indices, refuses backwards reads.
 
@@ -612,10 +654,13 @@ class Reader:
             convert = (['-vf', ','.join(chain)] if chain else [])+['-pix_fmt', fmt]
         else:
             convert = ['-vf', ','.join(chain+[f'scale=in_range={rng}:out_range={rng},format={fmt}'])]
-        self.p = subprocess.Popen([FFMPEG, '-v', 'error', '-noautorotate', *seek, *file_input(path),
-                                   '-map', '0:v:0', '-an', '-fps_mode', 'passthrough',
-                                   *convert, '-f', 'rawvideo', '-'],
-                                  stdout=subprocess.PIPE, stderr=self.log)
+        try:
+            self.p = decoder_process([FFMPEG, '-v', 'error', '-noautorotate', *seek, *file_input(path),
+                                     '-map', '0:v:0', '-an', '-fps_mode', 'passthrough',
+                                     *convert, '-f', 'rawvideo', '-'], self.log)
+        except BaseException:
+            self.log.close()
+            raise
         self.index = start-1
         self.last = None
         # Decode ahead in a thread; each frame gets its own buffer, so order and bytes are unchanged.
@@ -1011,6 +1056,19 @@ def encoder(path, size, fps, source, color, audio_filter=None, audio=True, prese
     return cmd+['-movflags', '+faststart', str(path)]
 
 
+@functools.lru_cache(maxsize=32)
+def color_lut(gain, offset):
+    """Bounded 24 KiB of uint8 fixed-color tables; keys bind every parameter.
+
+    Build with the same float64 operations, clipping and ties-to-even as the
+    former per-pixel transform. Geometry has already produced uint8 pixels.
+    """
+    values = np.arange(256, dtype=np.uint8)[:, None].astype(float)
+    table = np.clip(values*gain+offset, 0, 255).round().astype(np.uint8).reshape(256, 1, 3)
+    table.flags.writeable = False
+    return table
+
+
 def patch_inputs(p, i, roi, generated, count):
     """Work-size original, aligned colour-fixed patch and faded matte for source frame i,
     exactly as merge blends them (qc_tools seam measures the same layers)."""
@@ -1023,7 +1081,7 @@ def patch_inputs(p, i, roi, generated, count):
                            borderMode=cv2.BORDER_CONSTANT)
     gain, offset = p.get('gain_bgr',[1,1,1]), p.get('offset_bgr',[0,0,0])
     if list(gain) != [1,1,1] or list(offset) != [0,0,0]:  # identity is a no-op
-        patch = np.clip(patch.astype(float)*gain+offset,0,255).round().astype(np.uint8)
+        patch = cv2.LUT(patch, color_lut(tuple(gain), tuple(offset)))
     m = matte(p['matte'],i,ws)
     fade_in, fade_out = fades(p)
     if fade_in or fade_out:

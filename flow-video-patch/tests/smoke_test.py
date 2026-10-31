@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import cv2
 import numpy as np
@@ -601,6 +602,71 @@ class Smoke(unittest.TestCase):
         b=lambda path:json.loads(fp.run([fp.FFPROBE,'-v','error','-select_streams','v:0','-show_entries',
                                          'stream=has_b_frames','-of','json',str(path)]))['streams'][0]['has_b_frames']
         self.assertEqual(b(out),b(src))
+
+
+    def test_29_decoder_pipe_fallback_and_failure_cleanup(self):
+        # Non-Windows must keep subprocess' standard pipe, without touching Win32.
+        sentinel = object()
+        with mock.patch.object(fp.sys, 'platform', 'linux'), mock.patch.object(fp.subprocess, 'Popen', return_value=sentinel) as start:
+            self.assertIs(fp.decoder_process(['decoder'], None), sentinel)
+            start.assert_called_once_with(['decoder'], stdout=subprocess.PIPE, stderr=None)
+        if sys.platform != 'win32':
+            return
+        import ctypes
+        from ctypes import wintypes
+        import msvcrt
+        import gc
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel.GetProcessHandleCount.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        def handles():
+            gc.collect()
+            n = wintypes.DWORD()
+            self.assertTrue(kernel.GetProcessHandleCount(kernel.GetCurrentProcess(), ctypes.byref(n)))
+            return n.value
+        before = handles()
+        # Both raw-handle and fd/stream ownership transfers must unwind.
+        for target in ('start', 'second_fd', 'second_stream'):
+            original_fd, original_stream = msvcrt.open_osfhandle, fp.os.fdopen
+            calls = [0]
+            def fail_second(original):
+                def call(*a, **kw):
+                    calls[0] += 1
+                    if calls[0] == 2:
+                        raise OSError('injected '+target)
+                    return original(*a, **kw)
+                return call
+            if target == 'start':
+                patcher = mock.patch.object(fp.subprocess, 'Popen', side_effect=OSError('injected start'))
+            elif target == 'second_fd':
+                patcher = mock.patch.object(msvcrt, 'open_osfhandle', side_effect=fail_second(original_fd))
+            else:
+                patcher = mock.patch.object(fp.os, 'fdopen', side_effect=fail_second(original_stream))
+            with patcher:
+                with self.assertRaisesRegex(OSError, 'injected'):
+                    fp.decoder_process(['decoder'], None)
+            self.assertEqual(handles(), before, target+' leaked handles')
+        proc = fp.decoder_process([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(bytes(range(256))*8192)'], None)
+        self.assertEqual(proc.stdout.read(), bytes(range(256))*8192)
+        proc.stdout.close()
+        self.assertEqual(proc.wait(), 0)
+        del proc
+        self.assertEqual(handles(), before)
+
+    def test_30_fixed_color_lut_exact_and_bounded(self):
+        pixels = np.tile(np.arange(256, dtype=np.uint8)[:,None,None], (1,3,3))
+        original = pixels.copy()
+        fp.color_lut.cache_clear()
+        for gain, offset in [([1,1,1],[-.5,.5,1.5]),([.001,3.7,1.001],[-231.5,127.5,-.5]),
+                             ([.9,1.02,1.2],[3,-1,.5])]:
+            expected = np.clip(pixels.astype(float)*gain+offset,0,255).round().astype(np.uint8)
+            actual = cv2.LUT(pixels, fp.color_lut(tuple(gain),tuple(offset)))
+            self.assertTrue(np.array_equal(actual, expected))
+        for i in range(64):
+            fp.color_lut((1+i/100,1,1),(0,0,0))
+        self.assertEqual(fp.color_lut.cache_info().currsize, 32)
+        self.assertFalse(fp.color_lut((1,1,1),(0,0,0)).flags.writeable)
+        self.assertTrue(np.array_equal(pixels, original))
 
 
 if __name__=='__main__':
