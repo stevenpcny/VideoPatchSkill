@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-31",
+  "baseline_commit": "401f8dadef2382d98e8a653dde2aa4a069f1310c",
+  "package_version": "2.9",
+  "execution_location": "installed copy matching all 49 upstream manifest entries; local native library already built",
+  "environment": {
+    "os": "Windows",
+    "python": "3.13.16",
+    "numpy": "2.5.4",
+    "opencv_distribution": "opencv-python 5.0.0.93",
+    "ffmpeg": "9.0.2-full_build-www.gyan.dev",
+    "FLOW_KERNELS": "auto",
+    "FLOW_PROCESS_THREADS": "4",
+    "FLOW_ENCODE_THREADS": "4"
+  },
+  "test_command_relative_to_skill": [
+    "python", "tests/smoke_test.py",
+    "Smoke.test_17_native_kernels_match_numpy",
+    "Smoke.test_23_corrupt_audio_is_rejected",
+    "Smoke.test_24_fallback_render_gets_its_own_strict_check"
+  ],
+  "results": [
+    {"test": "Smoke.test_17_native_kernels_match_numpy", "status": "pass"},
+    {"test": "Smoke.test_23_corrupt_audio_is_rejected", "status": "pass"},
+    {"test": "Smoke.test_24_fallback_render_gets_its_own_strict_check", "status": "pass"}
+  ],
+  "unittest_reported_seconds": 8.351,
+  "exit_code": 0,
+  "skipped": 0,
+  "full_suite_this_task": "not_run",
+  "cross_platform_this_task": "not_run",
+  "production_footage_this_task": "not_run",
+  "visual_acceptance": "not_run",
+  "speedup_measured": false
+}
