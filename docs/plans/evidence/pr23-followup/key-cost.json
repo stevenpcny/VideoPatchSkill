@@ -1,0 +1,152 @@
+[
+  {
+    "size": [
+      640,
+      640
+    ],
+    "raw": [
+      {
+        "semantic_key_30_calls": 0.0001908999984152615,
+        "bytes_key_30_calls": 0.03405619999830378
+      },
+      {
+        "semantic_key_30_calls": 0.00029260000155773014,
+        "bytes_key_30_calls": 0.034375199997157324
+      },
+      {
+        "semantic_key_30_calls": 0.00031399999716086313,
+        "bytes_key_30_calls": 0.03288030000112485
+      },
+      {
+        "semantic_key_30_calls": 0.00026140000409213826,
+        "bytes_key_30_calls": 0.0329418999972404
+      },
+      {
+        "semantic_key_30_calls": 0.00025779999850783497,
+        "bytes_key_30_calls": 0.033576299996639136
+      },
+      {
+        "semantic_key_30_calls": 0.0002705000006244518,
+        "bytes_key_30_calls": 0.03371719999995548
+      },
+      {
+        "semantic_key_30_calls": 0.0002652000039233826,
+        "bytes_key_30_calls": 0.03321010000217939
+      },
+      {
+        "semantic_key_30_calls": 0.0002635000055306591,
+        "bytes_key_30_calls": 0.03391220000048634
+      },
+      {
+        "semantic_key_30_calls": 0.0002647000001161359,
+        "bytes_key_30_calls": 0.03352289999747882
+      },
+      {
+        "semantic_key_30_calls": 0.00026140000409213826,
+        "bytes_key_30_calls": 0.03274700000474695
+      }
+    ],
+    "semantic_median": 0.0002641000028233975,
+    "bytes_median": 0.033549599997058976
+  },
+  {
+    "size": [
+      960,
+      540
+    ],
+    "raw": [
+      {
+        "semantic_key_30_calls": 0.00027409999893279746,
+        "bytes_key_30_calls": 0.04203909999341704
+      },
+      {
+        "semantic_key_30_calls": 0.0002925000007962808,
+        "bytes_key_30_calls": 0.04189129999576835
+      },
+      {
+        "semantic_key_30_calls": 0.0002936000018962659,
+        "bytes_key_30_calls": 0.04192390000389423
+      },
+      {
+        "semantic_key_30_calls": 0.00029350000113481656,
+        "bytes_key_30_calls": 0.042203700002573896
+      },
+      {
+        "semantic_key_30_calls": 0.00029689999792026356,
+        "bytes_key_30_calls": 0.04177419999905396
+      },
+      {
+        "semantic_key_30_calls": 0.0002902999985963106,
+        "bytes_key_30_calls": 0.04289109999808716
+      },
+      {
+        "semantic_key_30_calls": 0.00029740000172751024,
+        "bytes_key_30_calls": 0.04089609999937238
+      },
+      {
+        "semantic_key_30_calls": 0.0003010000000358559,
+        "bytes_key_30_calls": 0.04167579999921145
+      },
+      {
+        "semantic_key_30_calls": 0.0003243000028305687,
+        "bytes_key_30_calls": 0.04154079999716487
+      },
+      {
+        "semantic_key_30_calls": 0.0003008999992744066,
+        "bytes_key_30_calls": 0.04191819999687141
+      }
+    ],
+    "semantic_median": 0.0002952499999082647,
+    "bytes_median": 0.04190474999631988
+  },
+  {
+    "size": [
+      1920,
+      1080
+    ],
+    "raw": [
+      {
+        "semantic_key_30_calls": 0.00030330000299727544,
+        "bytes_key_30_calls": 0.17182209999737097
+      },
+      {
+        "semantic_key_30_calls": 0.0007120000009308569,
+        "bytes_key_30_calls": 0.16599410000344506
+      },
+      {
+        "semantic_key_30_calls": 0.0006740999961039051,
+        "bytes_key_30_calls": 0.16717520000383956
+      },
+      {
+        "semantic_key_30_calls": 0.0007222999993246049,
+        "bytes_key_30_calls": 0.1667267999946489
+      },
+      {
+        "semantic_key_30_calls": 0.0006787000020267442,
+        "bytes_key_30_calls": 0.16576720000011846
+      },
+      {
+        "semantic_key_30_calls": 0.0006744000056642108,
+        "bytes_key_30_calls": 0.16634110000450164
+      },
+      {
+        "semantic_key_30_calls": 0.0007096000044839457,
+        "bytes_key_30_calls": 0.17366829999809852
+      },
+      {
+        "semantic_key_30_calls": 0.000644200001261197,
+        "bytes_key_30_calls": 0.16369500000291737
+      },
+      {
+        "semantic_key_30_calls": 0.0006759000025340356,
+        "bytes_key_30_calls": 0.1652094000019133
+      },
+      {
+        "semantic_key_30_calls": 0.0006773999994038604,
+        "bytes_key_30_calls": 0.1628010999993421
+      }
+    ],
+    "semantic_median": 0.000676650000968948,
+    "bytes_median": 0.16616760000397335
+  }
+]

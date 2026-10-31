@@ -1,0 +1,113 @@
+{
+  "scope": "actual merge_plan/process, synthetic 4K 240 frames, one 640px multiband patch; post-composite FFmpeg downscale prototype; strict output decode, not product approval workflow",
+  "runs": [
+    {
+      "baseline": {
+        "seconds": 50.782139799994184,
+        "sha256": "036bb19e8d9e2236727c56051ebb48ae1dfa471bbaababa3bf2c558dd4907ad3",
+        "frames": 240,
+        "bytes": 20385179,
+        "audio": true
+      },
+      "direct": {
+        "seconds": 49.84916779999912,
+        "sha256": "2eaf6e66226a8970f77418115096d44c551b4aec331fb5f2f1d6b3f36e30663c",
+        "frames": 240,
+        "bytes": 20724181,
+        "audio": true
+      }
+    },
+    {
+      "direct": {
+        "seconds": 50.799383300000045,
+        "sha256": "2eaf6e66226a8970f77418115096d44c551b4aec331fb5f2f1d6b3f36e30663c",
+        "frames": 240,
+        "bytes": 20724181,
+        "audio": true
+      },
+      "baseline": {
+        "seconds": 51.851728800000274,
+        "sha256": "036bb19e8d9e2236727c56051ebb48ae1dfa471bbaababa3bf2c558dd4907ad3",
+        "frames": 240,
+        "bytes": 20385179,
+        "audio": true
+      }
+    },
+    {
+      "baseline": {
+        "seconds": 51.54805430000124,
+        "sha256": "036bb19e8d9e2236727c56051ebb48ae1dfa471bbaababa3bf2c558dd4907ad3",
+        "frames": 240,
+        "bytes": 20385179,
+        "audio": true
+      },
+      "direct": {
+        "seconds": 50.862704200000735,
+        "sha256": "2eaf6e66226a8970f77418115096d44c551b4aec331fb5f2f1d6b3f36e30663c",
+        "frames": 240,
+        "bytes": 20724181,
+        "audio": true
+      }
+    },
+    {
+      "direct": {
+        "seconds": 51.07614789999934,
+        "sha256": "2eaf6e66226a8970f77418115096d44c551b4aec331fb5f2f1d6b3f36e30663c",
+        "frames": 240,
+        "bytes": 20724181,
+        "audio": true
+      },
+      "baseline": {
+        "seconds": 52.61560649999592,
+        "sha256": "036bb19e8d9e2236727c56051ebb48ae1dfa471bbaababa3bf2c558dd4907ad3",
+        "frames": 240,
+        "bytes": 20385179,
+        "audio": true
+      }
+    },
+    {
+      "baseline": {
+        "seconds": 51.524597199997515,
+        "sha256": "036bb19e8d9e2236727c56051ebb48ae1dfa471bbaababa3bf2c558dd4907ad3",
+        "frames": 240,
+        "bytes": 20385179,
+        "audio": true
+      },
+      "direct": {
+        "seconds": 51.05082250000123,
+        "sha256": "2eaf6e66226a8970f77418115096d44c551b4aec331fb5f2f1d6b3f36e30663c",
+        "frames": 240,
+        "bytes": 20724181,
+        "audio": true
+      }
+    },
+    {
+      "direct": {
+        "seconds": 51.00648750000255,
+        "sha256": "2eaf6e66226a8970f77418115096d44c551b4aec331fb5f2f1d6b3f36e30663c",
+        "frames": 240,
+        "bytes": 20724181,
+        "audio": true
+      },
+      "baseline": {
+        "seconds": 51.99458920000325,
+        "sha256": "036bb19e8d9e2236727c56051ebb48ae1dfa471bbaababa3bf2c558dd4907ad3",
+        "frames": 240,
+        "bytes": 20385179,
+        "audio": true
+      }
+    }
+  ],
+  "summary": {
+    "warmup_pairs_excluded": 1,
+    "measured_pairs": 5,
+    "baseline_median_seconds": 51.851728800000274,
+    "direct_median_seconds": 51.00648750000255,
+    "reduction_percent": 1.6301120899130361,
+    "per_path_repeated_sha256_equal": {
+      "baseline": true,
+      "direct": true
+    },
+    "all_outputs_strict_decode_240_frames_1080p_audio": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "audio-payload-verification.json": "0e2e44de6a1ee8d5cf487c3731fcce50384fdee1b0d860b9522885a32951a52e",
+  "e01-config-portable.json": "8d929d74a84bb3cf1ecdc731eb237d16e4e32fe46d9749aa714581687d14e678",
+  "e01-full-raw.json": "45af8d39aac9f35d511b52de293b73bba4d0ceb31590752e4df7bdd0d66d289e",
+  "e01-media-hashes.json": "abe62c34deaaa15fb7bd9b31454f8ba3f763fbdc37ae2995ba3f06158b67c013",
+  "e01-supplementary-report.json": "dc31228e79b76b7c3706b5351b533d1ecf806148de9ee71fd00a49637ba9b2a4",
+  "key-cost.json": "7d434434a0928ac4cb33b4dd372ca53609c7652f560792b739dc60fb92ed8eb7",
+  "key-cost.py": "5fde3b34755eb4b5fb9cf86a21a8928e738f656807ccdbd7d03fc1badc0f0356",
+  "pr23-e01-actual.py": "ca983c8606b4577f3e0d5ad27932e3f5a71873a405a3a213601c0ce2ac12f072",
+  "pr23-e03-blend-prototype.py": "1ec12c7883e652cfd94966ca40dfe3f386ff5351b6a636be049886c90412814e",
+  "README.md": "995f0ea7de749acfc44da22319b14b7ab5b325dd8e675bf137dd4c62c16d3fec",
+  "summary.json": "f3598f0a01462c432616cfd0a2181ee70c7e86ee09a5157a9f643fdac4e98259",
+  "t0-native.json": "23df8bac5a24da1cfcb567f48ef8c7f2b6ad38420b1be9760b7d060b4f4e2c52",
+  "t0-numpy.json": "37cb1824514f2b9dfd1d54beffce35cbc94d472c33db54ee8c45ef85d16c9f7b",
+  "t0.py": "812a5bd86edb0c75ff73573b8183f7e6780424c0035f171000ccd829b34d2c73",
+  "t1-native.json": "dd20f207cd8c94bb6e352148d5a99fc825833f54229db0ed7194e19b2b56cca4",
+  "t1-numpy.json": "366e3bb5cd1f6ec97b9ce5e64ed693ae797e3a2ac0a33f36fb0c5f49f4c82cac",
+  "t1.py": "2d785a21102fd59b489dc0ef239fe459d07e5b613234295fc431372e5ce5d247"
+}

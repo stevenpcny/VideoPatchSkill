@@ -1,0 +1,231 @@
+{
+  "kernel": "native",
+  "frames": 30,
+  "size": [
+    640,
+    640
+  ],
+  "aa_pairs": [
+    {
+      "A1": {
+        "wall": 0.8427958999964176,
+        "process_cpu": 0.296875
+      },
+      "A2": {
+        "wall": 0.8169408999965526,
+        "process_cpu": 0.046875
+      }
+    },
+    {
+      "A1": {
+        "wall": 0.852335999996285,
+        "process_cpu": 0.265625
+      },
+      "A2": {
+        "wall": 0.8453111999988323,
+        "process_cpu": 0.25
+      }
+    },
+    {
+      "A1": {
+        "wall": 0.8433568999971612,
+        "process_cpu": 0.203125
+      },
+      "A2": {
+        "wall": 0.8443699000054039,
+        "process_cpu": 0.234375
+      }
+    },
+    {
+      "A1": {
+        "wall": 0.8446163999979035,
+        "process_cpu": 0.21875
+      },
+      "A2": {
+        "wall": 0.8231814000027953,
+        "process_cpu": 0.203125
+      }
+    },
+    {
+      "A1": {
+        "wall": 0.8474735999989207,
+        "process_cpu": 0.21875
+      },
+      "A2": {
+        "wall": 0.8482195999968098,
+        "process_cpu": 0.15625
+      }
+    }
+  ],
+  "instrumentation_pairs": [
+    {
+      "order": [
+        "off",
+        "on"
+      ],
+      "off": {
+        "wall": 0.8542253999985405,
+        "process_cpu": 0.125
+      },
+      "on": {
+        "wall": 0.8457768000007491,
+        "process_cpu": 0.296875
+      }
+    },
+    {
+      "order": [
+        "on",
+        "off"
+      ],
+      "on": {
+        "wall": 0.827519399994344,
+        "process_cpu": 0.375
+      },
+      "off": {
+        "wall": 0.8356070999943768,
+        "process_cpu": 0.28125
+      }
+    },
+    {
+      "order": [
+        "off",
+        "on"
+      ],
+      "off": {
+        "wall": 0.8336197000026004,
+        "process_cpu": 0.3125
+      },
+      "on": {
+        "wall": 0.8109407000010833,
+        "process_cpu": 0.28125
+      }
+    },
+    {
+      "order": [
+        "on",
+        "off"
+      ],
+      "on": {
+        "wall": 0.80855000000156,
+        "process_cpu": 0.1875
+      },
+      "off": {
+        "wall": 0.8136203999965801,
+        "process_cpu": 0.375
+      }
+    },
+    {
+      "order": [
+        "off",
+        "on"
+      ],
+      "off": {
+        "wall": 0.8271594000034383,
+        "process_cpu": 0.1875
+      },
+      "on": {
+        "wall": 0.8509898999982397,
+        "process_cpu": 0.21875
+      }
+    },
+    {
+      "order": [
+        "on",
+        "off"
+      ],
+      "on": {
+        "wall": 0.8392941000056453,
+        "process_cpu": 0.203125
+      },
+      "off": {
+        "wall": 0.8310772999975597,
+        "process_cpu": 0.21875
+      }
+    },
+    {
+      "order": [
+        "off",
+        "on"
+      ],
+      "off": {
+        "wall": 0.8607260999997379,
+        "process_cpu": 0.09375
+      },
+      "on": {
+        "wall": 0.8535870999985491,
+        "process_cpu": 0.3125
+      }
+    },
+    {
+      "order": [
+        "on",
+        "off"
+      ],
+      "on": {
+        "wall": 0.8417203999997582,
+        "process_cpu": 0.203125
+      },
+      "off": {
+        "wall": 0.8392265000002226,
+        "process_cpu": 0.078125
+      }
+    },
+    {
+      "order": [
+        "off",
+        "on"
+      ],
+      "off": {
+        "wall": 0.8445151000050828,
+        "process_cpu": 0.140625
+      },
+      "on": {
+        "wall": 0.8423120000006747,
+        "process_cpu": 0.0625
+      }
+    },
+    {
+      "order": [
+        "on",
+        "off"
+      ],
+      "on": {
+        "wall": 0.8292811999999685,
+        "process_cpu": 0.15625
+      },
+      "off": {
+        "wall": 0.8250986999992165,
+        "process_cpu": 0.21875
+      }
+    }
+  ],
+  "off_stats": {
+    "median": 0.8346133999984886,
+    "mad": 0.008484349997161189,
+    "min": 0.8136203999965801,
+    "max": 0.8607260999997379
+  },
+  "on_stats": {
+    "median": 0.8405072500027018,
+    "mad": 0.010854349999135593,
+    "min": 0.80855000000156,
+    "max": 0.8535870999985491
+  },
+  "profile": {
+    "wall_seconds": 0.820420699994429,
+    "process_cpu_seconds": 0.140625,
+    "components_seconds": {
+      "image_pyrDown": 0.04428829996322747,
+      "mask_pyrDown": 0.005975800027954392,
+      "pyrUp": 0.24708249997638632,
+      "blend_other_wall_residual": 0.5230741000268608
+    },
+    "counts": {
+      "image_pyrDown": 180,
+      "mask_pyrDown": 90,
+      "pyrUp": 270
+    }
+  },
+  "timing_scope": "synchronous actual blend calls only, no encoder or child process; excludes task reports; CPU is parent process including threads",
+  "limits": "environment and power plan not changed; thermal/frequency/background load not controlled. profile residual combines allocations, bands, blend and finish; not independent phase timers."
+}

@@ -1,0 +1,19 @@
+{
+  "scope": "E01 supplementary checks on retained actual 4K/240-frame experiment outputs",
+  "audio_files_checked": 18,
+  "audio_payload_equal_source": true,
+  "audio_packet_timing_equal_source": true,
+  "representative_final_review_difference": {
+    "pair": 1,
+    "metric": "FFmpeg decoded PSNR",
+    "average_db": 56.271602,
+    "minimum_frame_db": 55.580988,
+    "maximum_frame_db": 57.098958,
+    "interpretation": "A and B are different lossy workflows. This comparison is descriptive, not an independent quality reference or visual acceptance."
+  },
+  "pending": [
+    "independent pre-encode reference",
+    "localized seam and protected region inspection",
+    "new upstream feedback location"
+  ]
+}

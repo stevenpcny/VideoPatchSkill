@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "source": "4k240.mp4",
+  "source_size": [
+    3840,
+    2160
+  ],
+  "fps": 24,
+  "patches": [
+    {
+      "generated": "patch240.mp4",
+      "target": [
+        0,
+        240
+      ],
+      "crop": [
+        400,
+        400,
+        640,
+        640
+      ],
+      "work_size": [
+        640,
+        640
+      ],
+      "matte": {
+        "region": [
+          100,
+          100,
+          400,
+          400
+        ],
+        "feather": 32
+      },
+      "blend": "multiband",
+      "levels": 3,
+      "color_gain": [
+        1.01,
+        0.99,
+        1.0
+      ],
+      "color_offset": [
+        1,
+        0,
+        -1
+      ]
+    }
+  ]
+}
