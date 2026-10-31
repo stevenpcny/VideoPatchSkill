@@ -1038,6 +1038,32 @@ def trimmed_audio(first, last, fps):
             f'apad,atrim=duration={float((last-first)/fps)}')
 
 
+def chroma_groups(active):
+    """Split one frame's active patches into groups converted separately, each with an even-aligned
+    box. Patches whose even-aligned boxes intersect (they may share a 2x2 chroma block) share a group,
+    and groups are merged until their boxes are disjoint, so every Y pixel and chroma block a patch
+    touches is converted exactly as in one union box. Each group keeps the patches' order."""
+    def even(r):
+        x, y, w, h = r
+        return [x & ~1, y & ~1, x+w+((x+w) & 1), y+h+((y+h) & 1)]
+    groups = [([n], even(a[-1])) for n, a in enumerate(active)]
+    merged = True
+    while merged:
+        merged = False
+        for g in range(len(groups)):
+            for h in range(g+1, len(groups)):
+                a, b = groups[g][1], groups[h][1]
+                if a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]:
+                    groups[g] = (groups[g][0]+groups[h][0],
+                                 [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])])
+                    del groups[h]
+                    merged = True
+                    break
+            if merged:
+                break
+    return [([active[n] for n in sorted(ns)], box) for ns, box in groups]
+
+
 def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, bframes=None):
     """Encode one output. A merge span=(first,last) exports only those source frames, with the
     matching audio re-encoded; segment=True makes it video-only for joining."""
@@ -1093,14 +1119,12 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                             active.append((p,q,reader,j,rectangle(p['crop'], i, size)))
                     # Pixels outside every patch support go out as decoded, without an RGB round trip.
                     frame, Y, U, V = source.passthrough420(i)
-                    if active:
-                        # Even-aligned union of the crops, so chroma blocks touching a patch are recomputed whole.
-                        x0 = min(r[0] for *_,r in active) & ~1; y0 = min(r[1] for *_,r in active) & ~1
-                        x1 = max(r[0]+r[2] for *_,r in active); y1 = max(r[1]+r[3] for *_,r in active)
-                        x1 += x1 & 1; y1 += y1 & 1
+                    # Patches far apart are converted in separate even-aligned boxes (not one union box),
+                    # so chroma blocks touching a patch are still recomputed whole.
+                    for members, (x0, y0, x1, y1) in chroma_groups(active):
                         scene = source.region(i,(x0,y0,x1-x0,y1-y0))
                         changed = np.zeros(scene.shape[:2], bool)
-                        for p,q,reader,j,(x,y,w,h) in active:
+                        for p,q,reader,j,(x,y,w,h) in members:
                             x -= x0; y -= y0; ws = tuple(p['work_size'])
                             roi = scene[y:y+h,x:x+w].copy()
                             original, patch, m = patch_inputs(p, i, roi, reader.get(j), len(q['indices']))

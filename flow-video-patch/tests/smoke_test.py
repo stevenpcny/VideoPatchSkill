@@ -575,6 +575,34 @@ class Smoke(unittest.TestCase):
         self.assertEqual(fp.decode_pass(out)[1],fp.decode_pass(plain)[1])
         self.assertEqual(fp.audio_hash(src),fp.audio_hash(out))
 
+    def test_28_grouped_conversion_matches_one_union_box(self):
+        # Patches far apart are converted in separate boxes; adjacent ones sharing a chroma block stay
+        # together. Encoder input must equal converting one union box, so outputs are byte-identical.
+        g=lambda *crops:[(None,None,None,0,c) for c in crops]
+        boxes=lambda groups:[(len(m),b) for m,b in groups]
+        self.assertEqual(boxes(fp.chroma_groups(g((3,5,41,41),(141,81,45,45)))),[(1,[2,4,44,46]),(1,[140,80,186,126])])
+        self.assertEqual(boxes(fp.chroma_groups(g((10,11,51,51),(61,11,51,51)))),[(2,[10,10,112,62])])
+        self.assertEqual(boxes(fp.chroma_groups(g((0,0,61,61),(61,0,61,61),(120,61,61,61)))),[(3,[0,0,182,122])])
+        self.assertEqual(fp.chroma_groups([]),[])
+        def union(active):
+            if not active: return []
+            x0=min(r[0] for *_,r in active)&~1; y0=min(r[1] for *_,r in active)&~1
+            x1=max(r[0]+r[2] for *_,r in active); y1=max(r[1]+r[3] for *_,r in active)
+            return [(active,[x0,y0,x1+(x1&1),y1+(y1&1)])]
+        ps=[self.patch(crop=[3,5,45,60],work_size=[96,128],matte=dict(region=[16,16,64,96],feather=8)),
+            self.patch(crop=[141,61,45,60],work_size=[96,128],blend='multiband',levels=3,protect=None,
+                       matte=dict(region=[8,8,80,112],feather=8))]
+        cfg=fp.load(self.config('grouped',patches=ps)); info=fp.validate_source(cfg); plans=fp.merge_plan(cfg,info)
+        grouped,joined=self.base/'grouped.mp4',self.base/'grouped-union.mp4'
+        fp.process(cfg,info,'merge',grouped,plans)
+        original=fp.chroma_groups; fp.chroma_groups=union
+        try:
+            fp.process(cfg,info,'merge',joined,plans)
+        finally:
+            fp.chroma_groups=original
+        self.assertEqual(grouped.read_bytes(),joined.read_bytes())
+        self.assertGreater(np.mean(abs(image(grouped,6)[20:50,15:40].astype(float)-image(self.source,6)[20:50,15:40])),10)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
