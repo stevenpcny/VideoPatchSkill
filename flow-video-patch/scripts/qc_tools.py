@@ -14,6 +14,8 @@ All frame indices are zero-based. Rectangles are x,y,w,h in the measured video's
 Results are evidence for a human decision, not proof of identity, lip sync or a seamless merge.
 """
 import argparse
+import contextlib
+import functools
 import json
 from pathlib import Path
 import sys
@@ -23,6 +25,15 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import flow_patch as fp  # noqa: E402
+
+
+def shared_probes(cmd):
+    """Each input is fully decoded once per command, however many steps probe it (fp.shared_probes)."""
+    @functools.wraps(cmd)
+    def run(a):
+        with fp.shared_probes():
+            return cmd(a)
+    return run
 
 
 def frames(path):
@@ -57,9 +68,19 @@ def gray_region(f, r):
     return cv2.cvtColor(f[y:y+h, x:x+w], cv2.COLOR_BGR2GRAY).astype(np.float32)
 
 
+def gray_regions(path, rects):
+    """Per-frame grayscale crops of several rectangles from one sequential read."""
+    out = [[] for _ in rects]
+    for _, f in frames(path):
+        for crops, r in zip(out, rects):
+            crops.append(gray_region(f, r))
+    return out
+
+
+@shared_probes
 def cmd_offset(a):
-    U = [gray_region(f, a.region) for _, f in frames(a.upload)]
-    G = [gray_region(f, a.region) for _, f in frames(a.returned)]
+    rects = [a.region] + ([a.motion_region] if a.motion_region else [])
+    (U, *Um), (G, *Gm) = gray_regions(a.upload, rects), gray_regions(a.returned, rects)
     U, G = np.array(U), np.array(G)
     m = min(len(U), len(G)); halves = {'first_half': (0, m // 2), 'second_half': (m // 2, m)}
     scan = {}
@@ -73,8 +94,7 @@ def cmd_offset(a):
     out = {'upload_frames': len(U), 'returned_frames': len(G), 'offset_scan': scan,
            'note': 'offset k means returned frame j matches upload frame j+k; equal best offsets in both halves = no drift'}
     if a.motion_region:
-        Um = [gray_region(f, a.motion_region) for _, f in frames(a.upload)]
-        Gm = [gray_region(f, a.motion_region) for _, f in frames(a.returned)]
+        Um, Gm = Um[0], Gm[0]
         sh = [float(np.hypot(*cv2.phaseCorrelate(Um[j], Gm[j])[0])) for j in range(m)]
         out['residual_shift_px'] = {'mean': round(float(np.mean(sh)), 3), 'max': round(float(np.max(sh)), 3)}
     return out
@@ -136,43 +156,46 @@ def cmd_slit(a):
     return {'image': str(out), 'x_axis': 'frame index * zoom', 'y_axis': f'box-relative rows {a.rows[0]}..{a.rows[1]} * zoom*2'}
 
 
-def cmd_seam(a):
-    """Score one patch's seam exactly as merge would blend it (references/return-fit-assessment.md 5)."""
-    cfg = fp.load(Path(a.config).resolve()); info = fp.validate_source(cfg)
-    fp.require(0 <= a.patch < len(cfg.get('patches', [])), 'Patch index out of range')
-    fp.require(a.step >= 1 and a.sigma > 0 and a.threshold >= 0, 'Invalid step/sigma/threshold')
-    p = cfg['patches'][a.patch]; gi = fp.probe(p['generated'])
-    plan = fp.merge_plan(dict(cfg, patches=[p]), info)[0]
-    indices = plan['indices']; first = p['target'][0]
+def mapped_frames(cfg, info, gi, p, indices, ks):
+    """(source frame, generated frame index, source crop, generated frame) for each target offset in ks
+    (ascending, all mapped), from one sequential pass over each file; seam and precheck share it."""
+    first = p['target'][0]
     grid = lambda i: i['fps'] if i.get('on_frame_grid') else None
-    src = fp.Reader(cfg['source'], info['size'], info['color'], first, grid(info))
-    gen = fp.Reader(p['generated'], gi['size'], gi['color'],
-                    min((j for j in indices if j is not None), default=0), grid(gi))
-    blur = lambda im: cv2.GaussianBlur(im, (0, 0), a.sigma)
-    rows = []
+    src = fp.Reader(cfg['source'], info['size'], info['color'], first+ks[0], grid(info))
+    gen = fp.Reader(p['generated'], gi['size'], gi['color'], min(indices[k] for k in ks), grid(gi))
     try:
-        for k, i in enumerate(range(*p['target'])):
-            j = indices[k]
-            if j is None or k % a.step:
-                continue
-            x, y, w, h = fp.rectangle(p['crop'], i, info['size'])
-            original, patch, m = fp.patch_inputs(p, i, src.region(i, (x, y, w, h)), gen.get(j), len(indices))
-            o, g = original.astype(np.float32), patch.astype(np.float32)
-            lo, lg = blur(o), blur(g)
-            high = np.abs((g-lg)-(o-lo)).mean(2)  # new vs old detail, each minus its own low-pass
-            low = np.abs(lg-lo).mean(2)           # colour/brightness step across the seam
-            wgt = 4*m*(1-m); band = wgt > .2
-            total = float(wgt[band].sum())
-            rows.append({'frame': i, 'band_pixels': int(band.sum()),
-                         'high_freq_weighted_mean': float((high*wgt)[band].sum()/total) if total else 0.0,
-                         'low_freq_weighted_mean': float((low*wgt)[band].sum()/total) if total else 0.0,
-                         'large_high_freq_pixels': int(((wgt > .5) & (high > a.threshold)).sum())})
+        for k in ks:
+            i, j = first+k, indices[k]
+            yield i, j, src.region(i, fp.rectangle(p['crop'], i, info['size'])), gen.get(j)
     finally:
         src.close(); gen.close()
-    fp.require(rows, 'No mapped frames to measure')
+
+
+def seam_row(p, i, roi, generated, count, sigma, threshold):
+    original, patch, m = fp.patch_inputs(p, i, roi, generated, count)
+    o, g = original.astype(np.float32), patch.astype(np.float32)
+    blur = lambda im: cv2.GaussianBlur(im, (0, 0), sigma)
+    lo, lg = blur(o), blur(g)
+    high = np.abs((g-lg)-(o-lo)).mean(2)  # new vs old detail, each minus its own low-pass
+    low = np.abs(lg-lo).mean(2)           # colour/brightness step across the seam
+    wgt = 4*m*(1-m); band = wgt > .2
+    total = float(wgt[band].sum())
+    return {'frame': i, 'band_pixels': int(band.sum()),
+            'high_freq_weighted_mean': float((high*wgt)[band].sum()/total) if total else 0.0,
+            'low_freq_weighted_mean': float((low*wgt)[band].sum()/total) if total else 0.0,
+            'large_high_freq_pixels': int(((wgt > .5) & (high > threshold)).sum())}
+
+
+def seam_ks(indices, step):
+    ks = [k for k, j in enumerate(indices) if j is not None and not k % step]
+    fp.require(ks, 'No mapped frames to measure')
+    return ks
+
+
+def seam_result(patch, rows, sigma, threshold):
     worst = sorted(rows, key=lambda r: -r['high_freq_weighted_mean'])[:5]
     key = lambda name: [r[name] for r in rows]
-    return {'patch': a.patch, 'frames_measured': len(rows), 'sigma': a.sigma, 'threshold': a.threshold,
+    return {'patch': patch, 'frames_measured': len(rows), 'sigma': sigma, 'threshold': threshold,
             'summary': {name: {'mean': float(np.mean(key(name))), 'max': float(np.max(key(name)))}
                         for name in ('high_freq_weighted_mean', 'low_freq_weighted_mean',
                                      'large_high_freq_pixels')},
@@ -180,6 +203,53 @@ def cmd_seam(a):
             'note': 'Compare candidates of the same shot; lower is a less visible seam. Not visual acceptance.'}
 
 
+@shared_probes
+def cmd_seam(a):
+    """Score one patch's seam exactly as merge would blend it (references/return-fit-assessment.md 5)."""
+    cfg = fp.load(Path(a.config).resolve()); info = fp.validate_source(cfg)
+    fp.require(0 <= a.patch < len(cfg.get('patches', [])), 'Patch index out of range')
+    fp.require(a.step >= 1 and a.sigma > 0 and a.threshold >= 0, 'Invalid step/sigma/threshold')
+    p = cfg['patches'][a.patch]; gi = fp.probe(p['generated'])
+    indices = fp.merge_plan(dict(cfg, patches=[p]), info)[0]['indices']
+    with contextlib.closing(mapped_frames(cfg, info, gi, p, indices, seam_ks(indices, a.step))) as frames:
+        rows = [seam_row(p, i, roi, g, len(indices), a.sigma, a.threshold) for i, _, roi, g in frames]
+    return seam_result(a.patch, rows, a.sigma, a.threshold)
+
+
+def precheck_row(p, i, j, roi, generated):
+    ws = tuple(p['work_size'])
+    original = cv2.resize(roi, ws, interpolation=cv2.INTER_LANCZOS4)
+    patch = cv2.resize(generated, ws, interpolation=cv2.INTER_LANCZOS4)
+    m = fp.matte(p['matte'], i, ws)
+    outside = cv2.dilate((m > 0).astype(np.uint8), np.ones((15, 15), np.uint8)) == 0
+    for box in p.get('fit_exclude', []):
+        bx, by, bw, bh = fp.rectangle(box, i, ws); outside[by:by+bh, bx:bx+bw] = False
+    ga, gb = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY), cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+    row = {'frame': i, 'generated_frame': j}
+    try:
+        corr, warp = cv2.findTransformECC(ga, gb, np.eye(2, 3, dtype=np.float32), cv2.MOTION_AFFINE,
+                                          (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 100, 1e-5),
+                                          outside.astype(np.uint8)*255, 5)
+    except cv2.error:
+        return dict(row, correlation=None)
+    aligned = cv2.warpAffine(patch, warp, ws, flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
+    inside = cv2.warpAffine(np.ones(ws[::-1], np.uint8), warp, ws,
+                            flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP) > 0
+    flow = cv2.calcOpticalFlowFarneback(ga, cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY), None,
+                                        0.5, 3, 21, 3, 5, 1.1, 0)
+    texture = np.abs(cv2.Laplacian(ga, cv2.CV_32F)) > 8  # flat backgrounds give no motion evidence
+    use = outside & inside & texture
+    motion = np.hypot(flow[..., 0], flow[..., 1])[use]
+    diff = (aligned.astype(np.float32)-original.astype(np.float32))[outside & inside]
+    return dict(row, correlation=float(corr), scale=float(np.sqrt(abs(np.linalg.det(warp[:, :2])))),
+                shift=[float(warp[0, 2]), float(warp[1, 2])],
+                residual_motion_median=float(np.median(motion)) if motion.size else None,
+                residual_motion_p90=float(np.percentile(motion, 90)) if motion.size else None,
+                colour_offset_bgr=[float(v) for v in np.median(diff, 0)] if diff.size else None,
+                canvas_holes_in_patch=int(((m > 0) & ~inside).sum()))
+
+
+@shared_probes
 def cmd_precheck(a):
     """references/return-fit-assessment.md section 1 as numbers; people still judge blinks, expression,
     identity and performance. Geometry uses everything outside the (dilated) patch matte."""
@@ -190,51 +260,19 @@ def cmd_precheck(a):
     plan = fp.merge_plan(dict(cfg, patches=[p]), info)[0]; indices = plan['indices']
     valid = [(k, j) for k, j in enumerate(indices) if j is not None]
     fp.require(valid, 'No mapped frames to check')
-    ws = tuple(p['work_size']); first = p['target'][0]
-    picks = sorted({valid[round(i*(len(valid)-1)/(a.samples-1))] for i in range(a.samples)})
-    grid = lambda i: i['fps'] if i.get('on_frame_grid') else None
-    src = fp.Reader(cfg['source'], info['size'], info['color'], first+picks[0][0], grid(info))
-    gen = fp.Reader(p['generated'], gi['size'], gi['color'], picks[0][1], grid(gi))
-    rows = []
-    try:
-        for k, j in picks:
-            i = first+k
-            x, y, w, h = fp.rectangle(p['crop'], i, info['size'])
-            original = cv2.resize(src.region(i, (x, y, w, h)), ws, interpolation=cv2.INTER_LANCZOS4)
-            patch = cv2.resize(gen.get(j), ws, interpolation=cv2.INTER_LANCZOS4)
-            m = fp.matte(p['matte'], i, ws)
-            outside = cv2.dilate((m > 0).astype(np.uint8), np.ones((15, 15), np.uint8)) == 0
-            for box in p.get('fit_exclude', []):
-                bx, by, bw, bh = fp.rectangle(box, i, ws); outside[by:by+bh, bx:bx+bw] = False
-            ga, gb = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY), cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
-            row = {'frame': i, 'generated_frame': j}
-            try:
-                corr, warp = cv2.findTransformECC(ga, gb, np.eye(2, 3, dtype=np.float32), cv2.MOTION_AFFINE,
-                                                  (cv2.TERM_CRITERIA_COUNT | cv2.TERM_CRITERIA_EPS, 100, 1e-5),
-                                                  outside.astype(np.uint8)*255, 5)
-            except cv2.error:
-                rows.append(dict(row, correlation=None)); continue
-            aligned = cv2.warpAffine(patch, warp, ws, flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
-            inside = cv2.warpAffine(np.ones(ws[::-1], np.uint8), warp, ws,
-                                    flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP) > 0
-            flow = cv2.calcOpticalFlowFarneback(ga, cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY), None,
-                                                0.5, 3, 21, 3, 5, 1.1, 0)
-            texture = np.abs(cv2.Laplacian(ga, cv2.CV_32F)) > 8  # flat backgrounds give no motion evidence
-            use = outside & inside & texture
-            motion = np.hypot(flow[..., 0], flow[..., 1])[use]
-            diff = (aligned.astype(np.float32)-original.astype(np.float32))[outside & inside]
-            row.update(correlation=float(corr), scale=float(np.sqrt(abs(np.linalg.det(warp[:, :2])))),
-                       shift=[float(warp[0, 2]), float(warp[1, 2])],
-                       residual_motion_median=float(np.median(motion)) if motion.size else None,
-                       residual_motion_p90=float(np.percentile(motion, 90)) if motion.size else None,
-                       colour_offset_bgr=[float(v) for v in np.median(diff, 0)] if diff.size else None,
-                       canvas_holes_in_patch=int(((m > 0) & ~inside).sum()))
-            rows.append(row)
-    finally:
-        src.close(); gen.close()
+    picks = {k for k, _ in {valid[round(i*(len(valid)-1)/(a.samples-1))] for i in range(a.samples)}}
+    # The seam score samples its own frames (every step-th); both sets are kept exactly, read in one pass.
+    seam_frames = set(seam_ks(indices, max(1, len(indices)//a.samples)))
+    rows, seam_rows = [], []
+    with contextlib.closing(mapped_frames(cfg, info, gi, p, indices, sorted(picks | seam_frames))) as frames:
+        for i, j, roi, g in frames:
+            k = i-p['target'][0]
+            if k in picks:
+                rows.append(precheck_row(p, i, j, roi, g))
+            if k in seam_frames:
+                seam_rows.append(seam_row(p, i, roi, g, len(indices), 3, 12))
     ok = [r for r in rows if r.get('correlation') is not None]
-    seam = cmd_seam(argparse.Namespace(config=a.config, patch=a.patch, step=max(1, len(indices)//a.samples),
-                                       sigma=3, threshold=12))['summary']
+    seam = seam_result(a.patch, seam_rows, 3, 12)['summary']
     mapped = [j for j in indices if j is not None]
     summary = {
         'generated_sha256': fp.sha(p['generated']),

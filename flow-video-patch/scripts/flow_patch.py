@@ -8,6 +8,7 @@ import argparse
 import bisect
 from concurrent.futures import Future, ProcessPoolExecutor, ThreadPoolExecutor
 import contextlib
+import copy
 import ctypes
 import functools
 import importlib.metadata
@@ -446,13 +447,47 @@ def forget(path):
     key = str(Path(path).expanduser().resolve())
     _PROBED.pop(key, None)
     _PASSES.pop(key, None)
+    if _SHARED is not None:
+        _SHARED.pop(key, None)
+
+
+_SHARED = None  # {path: (identity, info)} while one check command shares its probes
+
+
+def file_identity(path):
+    st = os.stat(path)
+    return st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns
+
+
+@contextlib.contextmanager
+def shared_probes():
+    """Within one read-only check command, a file probed again while its identity (device, inode,
+    size, mtime) is unchanged reuses the first full decoding pass. Never used for merges or output
+    checks; strict probes always decode again. Nested scopes share the outermost one."""
+    global _SHARED
+    outer = _SHARED
+    if outer is None:
+        _SHARED = {}
+    try:
+        yield
+    finally:
+        _SHARED = outer
 
 
 def probe(path, strict=False):
     path = local_media(path)
     if path in _PROBED:
         return _PROBED[path].result()
-    return _probe(path, strict)
+    if _SHARED is None or strict:
+        return _probe(path, strict)
+    before = file_identity(path)
+    hit = _SHARED.get(path)
+    if hit is not None and hit[0] == before:
+        return copy.deepcopy(hit[1])
+    info = _probe(path)
+    require(file_identity(path) == before, 'Input changed while it was being probed')
+    _SHARED[path] = (before, copy.deepcopy(info))
+    return info
 
 
 def _probe(path, strict=False):
@@ -835,7 +870,10 @@ def prepare_plan(cfg, info):
             'core_in_upload': [start-first, end-first], 'audio': info['audio']}
 
 
-def merge_plan(cfg, info):
+def merge_plan(cfg, info, span=None):
+    """span=(first,last): a check-only export checks per-frame crop, matte and affine holes only on
+    the frames it renders (a patch outside it still gets its first frame checked, so a malformed
+    matte or blend is refused anyway). Deliverables and dry runs pass no span and check every frame."""
     require(len(cfg['patches']) > 0, 'No patches')
     plans = []
     for p in cfg['patches']:
@@ -860,10 +898,14 @@ def merge_plan(cfg, info):
             require(fade_in <= len(indices)//2, 'Invalid fade_frames')
         affine_spec = p.get('source_to_generated_affine', [1,0,0,0,1,0])
         static = static_matte(p['matte']) and not keyframed(affine_spec)
-        for i in range(*p['target']):
+        first, last = p['target']
+        if span is not None:
+            first, last = (max(first, span[0]), min(last, span[1])) if first < span[1] and span[0] < last \
+                else (first, first+1)
+        for i in range(first, last):
             crop = rectangle(p['crop'], i, info['size'])
             require(abs((crop[2]/crop[3])/(size[0]/size[1])-1) < 0.005, 'Crop/work aspect mismatch')
-            if static and i > p['target'][0]:
+            if static and i > first:
                 continue  # Same matte and affine on every frame: the first check covers them all.
             m = matte(p['matte'], i, size)
             affine = curve(affine_spec, i).reshape(2,3)
@@ -873,7 +915,7 @@ def merge_plan(cfg, info):
                                    borderMode=cv2.BORDER_CONSTANT)
             require(not np.any((m > 0) & (valid < .999)),
                     f'Affine leaves holes inside patch support at source frame {i}; shrink mask/review')
-            if i == p['target'][0]:
+            if i == first:
                 blend(np.zeros((size[1],size[0],3),np.uint8),
                       np.zeros((size[1],size[0],3),np.uint8), m, p.get('blend','alpha'), p.get('levels',5))
         plans.append({'info': gi, 'indices': indices})
@@ -996,6 +1038,32 @@ def trimmed_audio(first, last, fps):
             f'apad,atrim=duration={float((last-first)/fps)}')
 
 
+def chroma_groups(active):
+    """Split one frame's active patches into groups converted separately, each with an even-aligned
+    box. Patches whose even-aligned boxes intersect (they may share a 2x2 chroma block) share a group,
+    and groups are merged until their boxes are disjoint, so every Y pixel and chroma block a patch
+    touches is converted exactly as in one union box. Each group keeps the patches' order."""
+    def even(r):
+        x, y, w, h = r
+        return [x & ~1, y & ~1, x+w+((x+w) & 1), y+h+((y+h) & 1)]
+    groups = [([n], even(a[-1])) for n, a in enumerate(active)]
+    merged = True
+    while merged:
+        merged = False
+        for g in range(len(groups)):
+            for h in range(g+1, len(groups)):
+                a, b = groups[g][1], groups[h][1]
+                if a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]:
+                    groups[g] = (groups[g][0]+groups[h][0],
+                                 [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])])
+                    del groups[h]
+                    merged = True
+                    break
+            if merged:
+                break
+    return [([active[n] for n in sorted(ns)], box) for ns, box in groups]
+
+
 def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, bframes=None):
     """Encode one output. A merge span=(first,last) exports only those source frames, with the
     matching audio re-encoded; segment=True makes it video-only for joining."""
@@ -1016,6 +1084,10 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                 # Each return is read from the first generated frame this span uses.
                 used = [j for k,j in enumerate(q['indices'])
                         if j is not None and first <= p['target'][0]+k < last]
+                if not used:
+                    # No frame of this span reads the return, so do not start its decoder.
+                    readers.append(None)
+                    continue
                 readers.append(Reader(p['generated'], q['info']['size'], q['info']['color'],
                                       min(used, default=0), grid(q['info'])))
                 stack.callback(readers[-1].close)
@@ -1047,14 +1119,12 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                             active.append((p,q,reader,j,rectangle(p['crop'], i, size)))
                     # Pixels outside every patch support go out as decoded, without an RGB round trip.
                     frame, Y, U, V = source.passthrough420(i)
-                    if active:
-                        # Even-aligned union of the crops, so chroma blocks touching a patch are recomputed whole.
-                        x0 = min(r[0] for *_,r in active) & ~1; y0 = min(r[1] for *_,r in active) & ~1
-                        x1 = max(r[0]+r[2] for *_,r in active); y1 = max(r[1]+r[3] for *_,r in active)
-                        x1 += x1 & 1; y1 += y1 & 1
+                    # Patches far apart are converted in separate even-aligned boxes (not one union box),
+                    # so chroma blocks touching a patch are still recomputed whole.
+                    for members, (x0, y0, x1, y1) in chroma_groups(active):
                         scene = source.region(i,(x0,y0,x1-x0,y1-y0))
                         changed = np.zeros(scene.shape[:2], bool)
-                        for p,q,reader,j,(x,y,w,h) in active:
+                        for p,q,reader,j,(x,y,w,h) in members:
                             x -= x0; y -= y0; ws = tuple(p['work_size'])
                             roi = scene[y:y+h,x:x+w].copy()
                             original, patch, m = patch_inputs(p, i, roi, reader.get(j), len(q['indices']))
@@ -1520,10 +1590,12 @@ def main():
     cache = None if deliverable and not args.dry_run else output_path(args.output).parent/'.flow-probe-cache'
     prefetch_probes([cfg['source'], *(p['generated'] for p in cfg.get('patches', []))], cache)
     info = validate_source(cfg)
-    plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info)
     require(not (args.copy_unpatched and span), '--copy-unpatched applies to full merges, not --frames')
     require(span is None or 0 <= span[0] < span[1] <= info['frames'],
             'Invalid --frames interval for this source')
+    # A dry run is a full plan check, with or without --frames.
+    checked = None if args.dry_run else span
+    plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info,checked)
     notices = output_notices(info, args.mode)
     if hardware:
         notices.append(f'Video encoder {video_encoder()} (hardware); compare quality with libx264 '
@@ -1579,6 +1651,8 @@ def main():
         if args.mode == 'merge':
             result['scope'] = {'frames': list(span) if span else [0, info['frames']],
                                'preview_encode': args.preview, 'deliverable': deliverable}
+            if span:
+                result['scope']['per_frame_checks'] = 'exported frames only; a full export checks every patch frame'
         if not deliverable:
             result['visual_review'] = ('not deliverable: partial/preview export for checking only; '
                                        'final acceptance must use a full export without --frames/--preview')

@@ -227,7 +227,8 @@ class Smoke(unittest.TestCase):
         out=cli('merge','--config',cfg,'--output',part,'--frames','6:18','--preview').stdout
         self.assertIn('not deliverable',out)
         rpt=json.loads(part.with_suffix('.report.json').read_text(encoding='utf-8'))
-        self.assertEqual(rpt['scope'],{'frames':[6,18],'preview_encode':True,'deliverable':False})
+        self.assertEqual(rpt['scope'],{'frames':[6,18],'preview_encode':True,'deliverable':False,
+                                     'per_frame_checks':'exported frames only; a full export checks every patch frame'})
         self.assertTrue(rpt['visual_review'].startswith('not deliverable'))
         self.assertIn('ultrafast',rpt['command_argv'])
         info=fp.probe(part)
@@ -505,6 +506,101 @@ class Smoke(unittest.TestCase):
         self.assertNotEqual(r.returncode,0,r.stdout)
         self.assertIn('copied frames do not decode identically',r.stderr)
         self.assertFalse(out.exists() or out.with_suffix('.report.json').exists())
+
+    def test_25_span_starts_no_decoder_for_unused_returns(self):
+        # The second person's patch lies entirely after the exported span; its return is never read.
+        p=self.patch(target=[0,12],frame_map=list(range(12)))
+        q=self.patch(target=[12,24],frame_map=list(range(12)),crop=[96,0,96,128])
+        cfg=fp.load(self.config('unused-reader',patches=[p,q]))
+        info=fp.validate_source(cfg); plans=fp.merge_plan(cfg,info)
+        opened=[]; original=fp.Reader
+        class Counted(original):
+            def __init__(self,path,*a,**k):
+                opened.append(Path(path).name); super().__init__(path,*a,**k)
+        fp.Reader=Counted
+        try:
+            for span,expect in (((0,12),['source 中文.mp4','flow.mp4']),
+                                ((4,16),['source 中文.mp4','flow.mp4','flow.mp4'])):
+                opened.clear(); out=self.base/f'unused-reader-{span[0]}.mp4'
+                fp.process(cfg,info,'merge',out,plans,span)
+                self.assertEqual(opened,expect)
+                self.assertEqual(fp.probe(out)['frames'],span[1]-span[0])
+        finally:
+            fp.Reader=original
+        before,after=image(self.source,6),image(self.base/'unused-reader-0.mp4',6)
+        self.assertGreater(np.mean(abs(after[30:60,30:65].astype(float)-before[30:60,30:65])),20)
+
+    def test_26_check_export_checks_only_its_frames(self):
+        # From PR #17. Keyframed affine that leaves holes in the patch support from frame 20 on.
+        shift=[dict(frame=0,value=[1,0,0,0,1,0]),dict(frame=19,value=[1,0,0,0,1,0]),
+               dict(frame=20,value=[1,0,40,0,1,0])]
+        cfg=self.config('span-check',patches=[self.patch(source_to_generated_affine=shift)])
+        cli('merge','--config',cfg,'--output',self.base/'span-ok.mp4','--frames','2:8','--preview')
+        late=cli('merge','--config',cfg,'--output',self.base/'span-late.mp4','--frames','18:22','--preview',ok=False)
+        self.assertIn('source frame 20',late.stderr)
+        # Deliverable and dry runs still check every patched frame, also a dry run given --frames.
+        full=cli('merge','--config',cfg,'--output',self.base/'span-full.mp4',ok=False)
+        self.assertIn('source frame 20',full.stderr)
+        for extra in ((),('--frames','2:8')):
+            self.assertIn('source frame 20',cli('merge','--config',cfg,'--output',self.base/'span-dry.mp4',
+                                                '--dry-run',*extra,ok=False).stderr)
+        # A patch entirely outside the span still has its first frame checked.
+        broken=self.patch(target=[12,24],frame_map=list(range(12)),crop=[96,0,96,128],
+                          source_to_generated_affine=[1,0,40,0,1,0])
+        cfg=self.config('span-outside',patches=[self.patch(target=[0,12],frame_map=list(range(12))),broken])
+        self.assertIn('source frame 12',cli('merge','--config',cfg,'--output',self.base/'span-out.mp4',
+                                            '--frames','2:8','--preview',ok=False).stderr)
+        # The interval is checked before any plan work.
+        self.assertIn('Invalid --frames',cli('merge','--config',cfg,'--output',self.base/'span-bad.mp4',
+                                             '--frames','20:30',ok=False).stderr)
+
+    def test_27_grouped_conversion_matches_one_union_box(self):
+        # Patches far apart are converted in separate boxes; adjacent ones sharing a chroma block stay
+        # together. Encoder input must equal converting one union box, so outputs are byte-identical.
+        g=lambda *crops:[(None,None,None,0,c) for c in crops]
+        boxes=lambda groups:[(len(m),b) for m,b in groups]
+        self.assertEqual(boxes(fp.chroma_groups(g((3,5,41,41),(141,81,45,45)))),[(1,[2,4,44,46]),(1,[140,80,186,126])])
+        self.assertEqual(boxes(fp.chroma_groups(g((10,11,51,51),(61,11,51,51)))),[(2,[10,10,112,62])])
+        self.assertEqual(boxes(fp.chroma_groups(g((0,0,61,61),(61,0,61,61),(120,61,61,61)))),[(3,[0,0,182,122])])
+        self.assertEqual(fp.chroma_groups([]),[])
+        def union(active):
+            if not active: return []
+            x0=min(r[0] for *_,r in active)&~1; y0=min(r[1] for *_,r in active)&~1
+            x1=max(r[0]+r[2] for *_,r in active); y1=max(r[1]+r[3] for *_,r in active)
+            return [(active,[x0,y0,x1+(x1&1),y1+(y1&1)])]
+        ps=[self.patch(crop=[3,5,45,60],work_size=[96,128],matte=dict(region=[16,16,64,96],feather=8)),
+            self.patch(crop=[141,61,45,60],work_size=[96,128],blend='multiband',levels=3,protect=None,
+                       matte=dict(region=[8,8,80,112],feather=8))]
+        cfg=fp.load(self.config('grouped',patches=ps)); info=fp.validate_source(cfg); plans=fp.merge_plan(cfg,info)
+        grouped,joined=self.base/'grouped.mp4',self.base/'grouped-union.mp4'
+        fp.process(cfg,info,'merge',grouped,plans)
+        original=fp.chroma_groups; fp.chroma_groups=union
+        try:
+            fp.process(cfg,info,'merge',joined,plans)
+        finally:
+            fp.chroma_groups=original
+        self.assertEqual(grouped.read_bytes(),joined.read_bytes())
+        self.assertGreater(np.mean(abs(image(grouped,6)[20:50,15:40].astype(float)-image(self.source,6)[20:50,15:40])),10)
+
+    def test_28_copy_unpatched_without_copyable_gops_keeps_source_reordering(self):
+        # Every GOP holds a patch frame. The render still follows the source's B-frame reordering
+        # (here none), as it always did; a plain full render would use the encoder's default B-frames.
+        src=self.base/'gop-nob.mp4'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=192x128:r=24:d=2','-c:v','libx264',
+                '-x264-params','keyint=12:min-keyint=12:scenecut=0:bframes=0','-pix_fmt','yuv420p',src])
+        p=self.patch(generated=str(self.generated),target=[6,29],frame_map=list(range(23)),crop=[0,0,96,128],protect=None)
+        q=self.patch(generated=str(self.generated),target=[40,44],frame_map=list(range(4)),crop=[96,0,96,128],protect=None)
+        cfg=self.config('gop-nob',source=str(src),source_size=[192,128],patches=[p,q])
+        out=self.base/'gop-nob-out.mp4'
+        r=subprocess.run([sys.executable,str(ROOT/'scripts/flow_patch.py'),'merge','--config',str(cfg),'--output',str(out),
+                          '--copy-unpatched'],capture_output=True,text=True,encoding='utf-8',env=dict(os.environ,FLOW_SEGMENTS='1'))
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertIn('copied no frames',r.stderr)
+        rpt=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
+        self.assertEqual((rpt['copy_unpatched']['copied_frames'],rpt['copy_unpatched']['rendered_frames']),(0,48))
+        b=lambda path:json.loads(fp.run([fp.FFPROBE,'-v','error','-select_streams','v:0','-show_entries',
+                                         'stream=has_b_frames','-of','json',str(path)]))['streams'][0]['has_b_frames']
+        self.assertEqual(b(out),b(src))
 
 
 if __name__=='__main__':
