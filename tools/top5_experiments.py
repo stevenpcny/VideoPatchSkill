@@ -170,7 +170,13 @@ def windows_reader_pipe(popen, argv, args, kwargs):
 def candidate(name):
     """One factor per experiment, scoped to this process and restored on errors."""
     with contextlib.ExitStack() as stack:
-        if name.startswith('next:'):
+        if name.startswith('buffers:'):
+            import buffer_pool_experiments
+            stack.enter_context(buffer_pool_experiments.candidate(name.split(':', 1)[1]))
+        elif name.startswith('vector:'):
+            import native_vector_experiments
+            stack.enter_context(native_vector_experiments.candidate(name.split(':', 1)[1]))
+        elif name.startswith('next:'):
             import next_perf_experiments
             stack.enter_context(next_perf_experiments.candidate(name.split(':', 1)[1]))
         elif name == 'patch_transform':
