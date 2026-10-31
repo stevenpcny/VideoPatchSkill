@@ -1051,6 +1051,10 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                 # Each return is read from the first generated frame this span uses.
                 used = [j for k,j in enumerate(q['indices'])
                         if j is not None and first <= p['target'][0]+k < last]
+                if not used:
+                    # No frame of this span reads the return, so do not start its decoder.
+                    readers.append(None)
+                    continue
                 readers.append(Reader(p['generated'], q['info']['size'], q['info']['color'],
                                       min(used, default=0), grid(q['info'])))
                 stack.callback(readers[-1].close)

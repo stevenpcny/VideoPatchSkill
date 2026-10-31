@@ -506,6 +506,29 @@ class Smoke(unittest.TestCase):
         self.assertIn('copied frames do not decode identically',r.stderr)
         self.assertFalse(out.exists() or out.with_suffix('.report.json').exists())
 
+    def test_25_span_starts_no_decoder_for_unused_returns(self):
+        # The second person's patch lies entirely after the exported span; its return is never read.
+        p=self.patch(target=[0,12],frame_map=list(range(12)))
+        q=self.patch(target=[12,24],frame_map=list(range(12)),crop=[96,0,96,128])
+        cfg=fp.load(self.config('unused-reader',patches=[p,q]))
+        info=fp.validate_source(cfg); plans=fp.merge_plan(cfg,info)
+        opened=[]; original=fp.Reader
+        class Counted(original):
+            def __init__(self,path,*a,**k):
+                opened.append(Path(path).name); super().__init__(path,*a,**k)
+        fp.Reader=Counted
+        try:
+            for span,expect in (((0,12),['source 中文.mp4','flow.mp4']),
+                                ((4,16),['source 中文.mp4','flow.mp4','flow.mp4'])):
+                opened.clear(); out=self.base/f'unused-reader-{span[0]}.mp4'
+                fp.process(cfg,info,'merge',out,plans,span)
+                self.assertEqual(opened,expect)
+                self.assertEqual(fp.probe(out)['frames'],span[1]-span[0])
+        finally:
+            fp.Reader=original
+        before,after=image(self.source,6),image(self.base/'unused-reader-0.mp4',6)
+        self.assertGreater(np.mean(abs(after[30:60,30:65].astype(float)-before[30:60,30:65])),20)
+
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
