@@ -499,7 +499,7 @@ SKILL.md 与 AGENT_ENTRY.md 不写版本说明、日期等每版都变的文字�
   `--json-out` 文件与不带 `--brief` 的 stdout 逐字节相同（测试断言）。
 - **阻断与负例**：workflow_test 覆盖 E4 的预览片人工构造记录、技术校验未运行、证据缺失与被改、区间不全（修补区间与接点窗口）、fail 与 not_run 并存、未知与缺失检查项、无理由 not_applicable、无确认出处的用户项、报告哈希不一致；C1 的 matte pending（6 个命令均拒绝且不留输出）、timing unverified（完整导出拒绝、检查用导出可运行并标注）、足帧但整体偏移 2 帧的返回片、改 generated_start 与替换返回片后回到 unverified、返回片不足、重名与非法遮罩。
 - **测试能否发现问题**：分别去掉"报告须为可交付完整导出"、"fail 优先于 not_run"、"完整导出须核验时间"三处判断，对应测试均失败；恢复后通过。
-- **全部测试**：见 PR 评论中的完整结果（smoke、security、qc_tools、color_pipeline、remote_run、workflow、ffmpeg_regression）。原生内核矩阵与 Windows／macOS 由 CI 复跑。
+- **全部测试**：smoke 28（跳过 1）、security 16、qc_tools 9、color_pipeline 9、remote_run 4、workflow 11、ffmpeg_regression 6 全部通过；构建原生内核后 workflow 与 smoke test_07／14／17／21 复跑通过。Windows／macOS 由 CI 复跑。
 
 与计划的差异：
 
