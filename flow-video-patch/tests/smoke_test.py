@@ -712,5 +712,94 @@ class Smoke(unittest.TestCase):
         self.assertTrue(np.array_equal(b,fp.blend(o,p,m,'multiband',3)))
 
 
+    def test_32_frame_pool_leases_acknowledgement_and_reader_ownership(self):
+        import threading
+        with mock.patch.object(fp,'FRAME_POOL_MIN',1):
+            stop=threading.Event();pool=fp._FramePool(8,8*(fp.PREFETCH+2))
+            held=[pool.acquire(stop) for _ in range(fp.PREFETCH+2)]
+            self.assertEqual(len({id(x) for x in held}),fp.PREFETCH+2)
+            result=[];waiting=threading.Thread(target=lambda:result.append(pool.acquire(stop)))
+            waiting.start();stop.set();waiting.join(timeout=2)
+            self.assertFalse(waiting.is_alive());self.assertEqual(result,[None])
+            pool.release(held[0]);pool.release(held[0])
+            self.assertEqual(pool.available.qsize(),1,'duplicate release duplicated a lease')
+            fallback=fp._FramePool(100,499)
+            self.assertEqual(fallback.limit,0)
+            a=fallback.acquire(threading.Event());b=fallback.acquire(threading.Event())
+            self.assertIsNot(a,b);self.assertFalse(fallback.buffers)
+
+            class SlowPipe:
+                def __init__(self):
+                    self.entered=threading.Event();self.proceed=threading.Event();self.written=[]
+                def write(self,item):
+                    self.entered.set()
+                    if not self.proceed.wait(timeout=5):raise OSError('test writer timeout')
+                    self.written.append(bytes(item))
+            pipe=SlowPipe();writer=fp.FrameWriter(pipe)
+            first=writer.acquire(8);first[:]=b'A'*8;writer.write(first)
+            self.assertTrue(pipe.entered.wait(timeout=2))
+            second=writer.acquire(8);self.assertIsNot(first,second)
+            self.assertTrue(writer.pool.available.empty(),'buffer recycled before write finished')
+            try:
+                with self.assertRaisesRegex(ValueError,'already queued'):
+                    writer.write(first)
+            finally:
+                pipe.proceed.set();writer.finish()
+            self.assertEqual(pipe.written,[b'A'*8]);self.assertEqual(writer.pool.available.qsize(),1)
+
+            class BrokenPipe:
+                def write(self,item):raise BrokenPipeError('injected write failure')
+            writer=fp.FrameWriter(BrokenPipe());buf=writer.acquire(8);writer.write(buf)
+            error=writer.finish();self.assertIsInstance(error,BrokenPipeError)
+            self.assertEqual(writer.pool.available.qsize(),1,'failed write did not return its lease')
+            with self.assertRaises(BrokenPipeError):writer.acquire(8)
+
+            info=fp.probe(self.source)
+            readers=[fp.Reader(self.source,info['size'],info['color'],recycle=x) for x in (False,True)]
+            try:
+                prior=readers[1].get(0);saved=prior.copy()
+                raw=readers[0].get(0);old_raw=readers[0].raw;saved_raw=old_raw.copy()
+                for index in [0,0,5,6,12,23]:
+                    self.assertTrue(np.array_equal(readers[0].get(index),readers[1].get(index)),index)
+                self.assertTrue(np.array_equal(prior,saved),'pooled raw data mutated returned BGR')
+                self.assertTrue(np.array_equal(old_raw,saved_raw),'default Reader recycled caller-held raw data')
+                self.assertLessEqual(len(readers[1]._raw_pool.buffers),fp.PREFETCH+2)
+            finally:
+                for reader in readers:reader.close()
+            reader=fp.Reader(self.source,info['size'],info['color'],recycle=True)
+            reader.get(0);reader.close();self.assertFalse(reader.thread.is_alive())
+
+
+    def test_33_pooled_merge_matches_unpooled_with_mapping_fade_and_spans(self):
+        mapping=list(range(23))+[22];mapping[5]=None
+        patch=self.patch(frame_map=mapping,fade_frames=3,gain_bgr=[1.01,.99,1.02],
+                         offset_bgr=[.5,-.5,2],source_to_generated_affine=[1,0,.25,0,1,-.5])
+        cfg=fp.load(self.config('pooled-quality',patches=[patch]));info=fp.validate_source(cfg)
+        plans=fp.merge_plan(cfg,info)
+        with mock.patch.object(fp,'FRAME_POOL_MIN',1):
+            for n,span in enumerate([None,(0,12),(4,16)]):
+                hashes=[]
+                for enabled in [False,True]:
+                    out=self.base/f'pooled-{n}-{enabled}.mp4'
+                    with mock.patch.object(fp,'RAW_POOL_BUDGET',128*1024*1024 if enabled else 0), \
+                         mock.patch.object(fp,'OUTPUT_POOL_BUDGET',64*1024*1024 if enabled else 0):
+                        plan,_=fp.process(cfg,info,'merge',out,plans,span,preset='ultrafast')
+                        fp.verify(cfg['source'],str(out),dict(plan,fps=info['fps']),span is None)
+                    hashes.append(fp.sha(out))
+                self.assertEqual(hashes[0],hashes[1],span)
+        # RGB readers must keep fresh storage even when pooling is explicitly requested.
+        rgb=self.base/'rgb-pool.nut'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=96x64:r=24',
+                '-frames:v','12','-c:v','rawvideo','-pix_fmt','bgr24',rgb])
+        meta=fp.probe(rgb)
+        with mock.patch.object(fp,'FRAME_POOL_MIN',1):
+            reader=fp.Reader(rgb,meta['size'],meta['color'],recycle=True)
+            try:
+                self.assertIsNone(reader._raw_pool)
+                first=reader.get(0);saved=first.copy();reader.get(11)
+                self.assertTrue(np.array_equal(first,saved))
+            finally:reader.close()
+
+
 if __name__=='__main__':
     unittest.main(verbosity=2)

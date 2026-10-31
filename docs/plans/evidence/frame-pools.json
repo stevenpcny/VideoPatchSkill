@@ -1,0 +1,984 @@
+{
+  "baseline_commit": "b585a1e1f5ba9cb384d12b60a7eb4bca4ca8dee1",
+  "baseline_source_sha256": "0c76cd2248751403cba7b4c7a3564364424d0f214adaf33ba45512fbef00ee23",
+  "production_source_sha256": "434d6e2f8866f03055e9f01f8bc33281758b49cd2e4db3a8c6e62fe8551303e3",
+  "native_source_unchanged": true,
+  "native_library_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+  "vector_builds": [
+    {
+      "name": "control",
+      "kernels": [],
+      "source_sha256": "84cefd7d2d00b51c0abf128d33dc6374b9e01ac29d37bea5d66d63fa2e682992",
+      "library_sha256": "05e0ddf924028b69eb8eb51c42b92295f538e7d3b40ab63b4ac8f51e7f73ebd2"
+    },
+    {
+      "name": "chroma",
+      "kernels": [
+        "fk_chroma_avg"
+      ],
+      "source_sha256": "062f9ac115df8cccd063e2f4d3542bf843ec1a184421c2cd35ecfdc419dc70cf",
+      "library_sha256": "90e8f044997e5bddabc8178e60d2de5f513620a0699c42a7fe49c05f951b7800"
+    },
+    {
+      "name": "color",
+      "kernels": [
+        "fk_yuv_to_bgr",
+        "fk_bgr_to_yuv420"
+      ],
+      "source_sha256": "f16155229aeeeac36bf06e1b03c22e52f5265e588bb1309dc967f28b09f204d7",
+      "library_sha256": "e5669f131252b587f398f89c15f6a597b22f462cabb1a69ad007927ded44d0f8"
+    },
+    {
+      "name": "blend",
+      "kernels": [
+        "fk_alpha",
+        "fk_level",
+        "fk_finish",
+        "fk_diff64",
+        "fk_apply64"
+      ],
+      "source_sha256": "9f65fbec4c8446f1c55cef656c4e07752e404944591c813f16cfa8b656ae3a49",
+      "library_sha256": "0da25d0d41beef29eedb39a225cba84349647f130c1c2d36d94a2d96c763dd47"
+    },
+    {
+      "name": "all",
+      "kernels": [
+        "fk_chroma_avg",
+        "fk_yuv_to_bgr",
+        "fk_bgr_to_yuv420",
+        "fk_alpha",
+        "fk_level",
+        "fk_finish",
+        "fk_diff64",
+        "fk_apply64"
+      ],
+      "source_sha256": "ac32edc46b77f4a27e7df23a1d93f3d2301e269ca19e0b6de599d49e0bf81381",
+      "library_sha256": "904ce883aa0f995db9cc68fd3bf6464c1cec392ff4d9cc63497e6eb8ad090a86"
+    }
+  ],
+  "vector_stage_results": {
+    "scope": "native operators only; warm cache; 120 frames per pair; quality outside timing",
+    "baseline_commit": "b585a1e1f5ba9cb384d12b60a7eb4bca4ca8dee1",
+    "cpu_avx2": 1,
+    "quality": {
+      "chroma/control": true,
+      "chroma/chroma": true,
+      "color/color": true,
+      "blend/blend": true
+    },
+    "timing": {
+      "chroma/control": {
+        "aa": [
+          2.189110299994354,
+          2.1945426000020234
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.1915828000055626,
+            "B": 2.243750399997225
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 2.2656921000016155,
+            "A": 2.192364499998803
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.192376199993305,
+            "B": 2.271304499998223
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 2.250188400001207,
+            "A": 2.1932861000022967
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.195500300003914,
+            "B": 2.2797190000055707
+          }
+        ],
+        "A": 2.192376199993305,
+        "B": 2.2656921000016155,
+        "saving_percent": -3.3441295343625166
+      },
+      "chroma/chroma": {
+        "aa": [
+          2.1917156999988947,
+          2.1988932000022032
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.203374700002314,
+            "B": 2.6903145000032964
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 2.6584192999944207,
+            "A": 2.193494799998007
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.1882820000028005,
+            "B": 2.6746722999960184
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 2.677714500001457,
+            "A": 2.1827152999976533
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.226468799999566,
+            "B": 2.705256699999154
+          }
+        ],
+        "A": 2.193494799998007,
+        "B": 2.677714500001457,
+        "saving_percent": -22.075260903462834
+      },
+      "color/color": {
+        "aa": [
+          0.6455959000013536,
+          0.6415846999952919
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 0.6406101000029594,
+            "B": 0.37397300000156974
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 0.3929770999966422,
+            "A": 0.6213920000009239
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 0.6295576999982586,
+            "B": 0.3716375000003609
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 0.4107205000036629,
+            "A": 0.6118051000012201
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 0.6205180000033579,
+            "B": 0.40835360000346554
+          }
+        ],
+        "A": 0.6213920000009239,
+        "B": 0.3929770999966422,
+        "saving_percent": 36.75858395408085
+      },
+      "blend/blend": {
+        "aa": [
+          1.9899875999981305,
+          1.9913653999974485
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 1.9741815000015777,
+            "B": 1.8820113999972818
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 1.9123061999998754,
+            "A": 1.992362700002559
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 1.9647045000019716,
+            "B": 1.862105000000156
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 1.8357528000051389,
+            "A": 1.9763329999987036
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 1.9812605999977677,
+            "B": 1.9045801000029314
+          }
+        ],
+        "A": 1.9763329999987036,
+        "B": 1.8820113999972818,
+        "saving_percent": 4.772556041997156
+      }
+    }
+  },
+  "vector_exhaustive_quality": {
+    "exact": true,
+    "cpu_avx2": 1,
+    "exhaustive_color_cases": 1024,
+    "yuv_pixels": 67108864,
+    "rgb_pixels": 67108864,
+    "chroma_sum_cases": 3063,
+    "stride_tail_cases": 12,
+    "scope": "all 24-bit RGB/YUV values per matrix/range; BGR UV uses adjacent-grid groups, not all four-pixel combinations; every chroma integer sum plus tails/strides"
+  },
+  "manual_chroma_stage": {
+    "scope": "native operators only; warm cache; 120 frames per pair; quality outside timing",
+    "baseline_commit": "b585a1e1f5ba9cb384d12b60a7eb4bca4ca8dee1",
+    "cpu_avx2": 1,
+    "quality": {
+      "chroma/manual_chroma": true
+    },
+    "timing": {
+      "chroma/manual_chroma": {
+        "aa": [
+          2.1933222000006936,
+          2.19126359999791
+        ],
+        "raw": [
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.2083066000050167,
+            "B": 0.04732499999954598
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 0.04760089999763295,
+            "A": 2.204447000003711
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.1960437999950955,
+            "B": 0.046186500003386755
+          },
+          {
+            "order": [
+              "B",
+              "A"
+            ],
+            "B": 0.0462822999979835,
+            "A": 2.1957408000016585
+          },
+          {
+            "order": [
+              "A",
+              "B"
+            ],
+            "A": 2.2013117000024067,
+            "B": 0.047229799994966015
+          }
+        ],
+        "A": 2.2013117000024067,
+        "B": 0.047229799994966015,
+        "saving_percent": 97.85447013274339
+      }
+    }
+  },
+  "vector_full_cli": {
+    "commit": "b585a1e1f5ba9cb384d12b60a7eb4bca4ca8dee1",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_VECTOR_DIR": "<local-experiment-library-dir>",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Complete actual main() --preview at 4K/240 frames in fresh Python processes and empty task probe caches (warm OS cache), includes input prefetch, source/return/output hashes, strict output/audio checks, tool inventory, report and publication. No resolution/duration changes.",
+    "runs": [
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.75315910000063,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 17.265096600000106,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "B",
+          "A"
+        ],
+        "B": {
+          "wall": 17.159076700001606,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "A": {
+          "wall": 17.446688700001687,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.503771399999096,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 16.931659700007003,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "B",
+          "A"
+        ],
+        "B": {
+          "wall": 17.383272099999886,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "A": {
+          "wall": 17.726714799995534,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.65967400000227,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 17.49717640000017,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      }
+    ],
+    "selected": [
+      "vector:selected"
+    ],
+    "A": {
+      "median": 17.65967400000227,
+      "mad": 0.09348509999836097,
+      "minimum": 17.446688700001687,
+      "maximum": 17.75315910000063
+    },
+    "B": {
+      "median": 17.265096600000106,
+      "mad": 0.11817549999977928,
+      "minimum": 16.931659700007003,
+      "maximum": 17.49717640000017
+    },
+    "saving_percent": 2.2343413587482597,
+    "candidate_profile": {
+      "wall": 16.22081430000253,
+      "stages": {
+        "input_validation": 1.5612662000057753,
+        "mask": 0.13622960000793682,
+        "blend": 5.1833508999989135,
+        "plan_other": 0.014822899989667349,
+        "decoder_wait": 0.6943765999167226,
+        "source_chroma_layout": 3.292317700019339,
+        "color_conversion": 1.439177500011283,
+        "patch_transform": 0.939607700020133,
+        "encoder_wait": 0.009530200026347302,
+        "render_other": 1.632323500001803,
+        "output_validation": 1.317589999998745
+      },
+      "calls": {
+        "input_validation": 2,
+        "mask": 241,
+        "blend": 241,
+        "plan_other": 1,
+        "decoder_wait": 720,
+        "source_chroma_layout": 240,
+        "color_conversion": 720,
+        "patch_transform": 240,
+        "encoder_wait": 241,
+        "render_other": 1,
+        "output_validation": 1
+      },
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "output_bytes": 84127160,
+      "frames": 240,
+      "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+    }
+  },
+  "pipe4_pilot": {
+    "commit": "b585a1e1f5ba9cb384d12b60a7eb4bca4ca8dee1",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_VECTOR_DIR": "<local-experiment-library-dir>",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Complete actual main() --preview at 4K/240 frames in fresh Python processes and empty task probe caches (warm OS cache), includes input prefetch, source/return/output hashes, strict output/audio checks, tool inventory, report and publication. No resolution/duration changes.",
+    "runs": [
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.80187599999772,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 17.517686799998046,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      }
+    ],
+    "selected": [
+      "vector:selected",
+      "vector:pipe4"
+    ],
+    "A": {
+      "median": 17.80187599999772,
+      "mad": 0.0,
+      "minimum": 17.80187599999772,
+      "maximum": 17.80187599999772
+    },
+    "B": {
+      "median": 17.517686799998046,
+      "mad": 0.0,
+      "minimum": 17.517686799998046,
+      "maximum": 17.517686799998046
+    },
+    "saving_percent": 1.5964002894959473,
+    "candidate_profile": {
+      "wall": 16.420372699998552,
+      "stages": {
+        "input_validation": 1.5621756999971694,
+        "mask": 0.13816860008228105,
+        "blend": 5.259057499926712,
+        "plan_other": 0.012081600005330984,
+        "decoder_wait": 0.7069866999445367,
+        "source_chroma_layout": 3.3862844001705525,
+        "color_conversion": 1.4650986000197008,
+        "patch_transform": 0.9514676000399049,
+        "encoder_wait": 0.009476999948674347,
+        "render_other": 1.631800399874919,
+        "output_validation": 1.2975627000050736
+      },
+      "calls": {
+        "input_validation": 2,
+        "mask": 241,
+        "blend": 241,
+        "plan_other": 1,
+        "decoder_wait": 720,
+        "source_chroma_layout": 240,
+        "color_conversion": 720,
+        "patch_transform": 240,
+        "encoder_wait": 241,
+        "render_other": 1,
+        "output_validation": 1
+      },
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "output_bytes": 84127160,
+      "frames": 240,
+      "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+    }
+  },
+  "output_pool_pilot": {
+    "commit": "b585a1e1f5ba9cb384d12b60a7eb4bca4ca8dee1",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Complete actual main() --preview at 4K/240 frames in fresh Python processes and empty task probe caches (warm OS cache), includes input prefetch, source/return/output hashes, strict output/audio checks, tool inventory, report and publication. No resolution/duration changes.",
+    "runs": [
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.870197800002643,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 16.730411800002912,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      }
+    ],
+    "selected": [
+      "buffers:output"
+    ],
+    "A": {
+      "median": 17.870197800002643,
+      "mad": 0.0,
+      "minimum": 17.870197800002643,
+      "maximum": 17.870197800002643
+    },
+    "B": {
+      "median": 16.730411800002912,
+      "mad": 0.0,
+      "minimum": 16.730411800002912,
+      "maximum": 16.730411800002912
+    },
+    "saving_percent": 6.378138690773538,
+    "candidate_profile": {
+      "wall": 15.563742099999217,
+      "stages": {
+        "input_validation": 1.5487759000025108,
+        "mask": 0.133380900042539,
+        "blend": 4.071464300141088,
+        "plan_other": 0.011467999996966682,
+        "decoder_wait": 0.6993202999437926,
+        "source_chroma_layout": 2.739916000056837,
+        "color_conversion": 2.4813448000350036,
+        "patch_transform": 0.9319993000026443,
+        "encoder_wait": 0.008252499967056792,
+        "render_other": 1.6373116998074693,
+        "output_validation": 1.3000112000008812
+      },
+      "calls": {
+        "input_validation": 2,
+        "mask": 241,
+        "blend": 241,
+        "plan_other": 1,
+        "decoder_wait": 720,
+        "source_chroma_layout": 240,
+        "color_conversion": 720,
+        "patch_transform": 240,
+        "encoder_wait": 241,
+        "render_other": 1,
+        "output_validation": 1
+      },
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "output_bytes": 84127160,
+      "frames": 240,
+      "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+    }
+  },
+  "both_pool_pilot": {
+    "commit": "b585a1e1f5ba9cb384d12b60a7eb4bca4ca8dee1",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Complete actual main() --preview at 4K/240 frames in fresh Python processes and empty task probe caches (warm OS cache), includes input prefetch, source/return/output hashes, strict output/audio checks, tool inventory, report and publication. No resolution/duration changes.",
+    "runs": [
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.58442120000109,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 14.865927600003488,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      }
+    ],
+    "selected": [
+      "buffers:both"
+    ],
+    "A": {
+      "median": 17.58442120000109,
+      "mad": 0.0,
+      "minimum": 17.58442120000109,
+      "maximum": 17.58442120000109
+    },
+    "B": {
+      "median": 14.865927600003488,
+      "mad": 0.0,
+      "minimum": 14.865927600003488,
+      "maximum": 14.865927600003488
+    },
+    "saving_percent": 15.459670631623812,
+    "candidate_profile": {
+      "wall": 13.60709059999499,
+      "stages": {
+        "input_validation": 1.5713777000055416,
+        "mask": 0.13868789996922715,
+        "blend": 4.0812882000318496,
+        "plan_other": 0.012289499994949438,
+        "decoder_wait": 0.35170430001744535,
+        "source_chroma_layout": 1.0614939999650232,
+        "color_conversion": 2.4703063000561087,
+        "patch_transform": 0.9695003000670113,
+        "encoder_wait": 0.008047500050452072,
+        "render_other": 1.6680156998481834,
+        "output_validation": 1.2738477000020794
+      },
+      "calls": {
+        "input_validation": 2,
+        "mask": 241,
+        "blend": 241,
+        "plan_other": 1,
+        "decoder_wait": 720,
+        "source_chroma_layout": 240,
+        "color_conversion": 720,
+        "patch_transform": 240,
+        "encoder_wait": 241,
+        "render_other": 1,
+        "output_validation": 1
+      },
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "output_bytes": 84127160,
+      "frames": 240,
+      "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+    }
+  },
+  "accepted_five_pairs": {
+    "commit": "b585a1e1f5ba9cb384d12b60a7eb4bca4ca8dee1",
+    "environment": {
+      "python": "3.13.16",
+      "numpy": "2.5.4",
+      "opencv": "5.0.0",
+      "opencv_threads": 4,
+      "native_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+      "ffmpeg": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+      "variables": {
+        "FLOW_ENCODE_THREADS": "4",
+        "FLOW_KERNELS": "native",
+        "FLOW_PROCESS_THREADS": "4"
+      }
+    },
+    "scope": "Complete actual main() --preview at 4K/240 frames in fresh Python processes and empty task probe caches (warm OS cache), includes input prefetch, source/return/output hashes, strict output/audio checks, tool inventory, report and publication. No resolution/duration changes.",
+    "runs": [
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.922966899997846,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 14.648490999999922,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "B",
+          "A"
+        ],
+        "B": {
+          "wall": 14.93308049999905,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "A": {
+          "wall": 17.77038960000209,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.75617439999769,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 14.740203300003486,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "B",
+          "A"
+        ],
+        "B": {
+          "wall": 14.206485700000485,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "A": {
+          "wall": 17.81962790000398,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      },
+      {
+        "order": [
+          "A",
+          "B"
+        ],
+        "A": {
+          "wall": 17.800539800002298,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        },
+        "B": {
+          "wall": 14.656075599996257,
+          "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "output_bytes": 84127160,
+          "frames": 240,
+          "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+        }
+      }
+    ],
+    "selected": [
+      "buffers:both"
+    ],
+    "A": {
+      "median": 17.800539800002298,
+      "mad": 0.030150200000207406,
+      "minimum": 17.75617439999769,
+      "maximum": 17.922966899997846
+    },
+    "B": {
+      "median": 14.656075599996257,
+      "mad": 0.08412770000722958,
+      "minimum": 14.206485700000485,
+      "maximum": 14.93308049999905
+    },
+    "saving_percent": 17.664993507700455,
+    "candidate_profile": {
+      "wall": 13.628635400003986,
+      "stages": {
+        "input_validation": 1.5810610999978962,
+        "mask": 0.13201999991724733,
+        "blend": 4.073299299991049,
+        "plan_other": 0.011558899997908156,
+        "decoder_wait": 0.3443648999746074,
+        "source_chroma_layout": 1.0647374999898602,
+        "color_conversion": 2.5796710998838535,
+        "patch_transform": 0.9050794001159375,
+        "encoder_wait": 0.007861799982492812,
+        "render_other": 1.6105896001463407,
+        "output_validation": 1.317772900001728
+      },
+      "calls": {
+        "input_validation": 2,
+        "mask": 241,
+        "blend": 241,
+        "plan_other": 1,
+        "decoder_wait": 720,
+        "source_chroma_layout": 240,
+        "color_conversion": 720,
+        "patch_transform": 240,
+        "encoder_wait": 241,
+        "render_other": 1,
+        "output_validation": 1
+      },
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "output_bytes": 84127160,
+      "frames": 240,
+      "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+    }
+  },
+  "actual_production_memory": [
+    {
+      "variant": "baseline",
+      "seconds": 17.826274700004433,
+      "peak_python_working_set_bytes": 260935680,
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "frames": 240
+    },
+    {
+      "variant": "production",
+      "seconds": 14.64082999999664,
+      "peak_python_working_set_bytes": 260079616,
+      "sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+      "frames": 240
+    }
+  ],
+  "budgets": {
+    "minimum": 1048576,
+    "buffers_per_pool": 5,
+    "raw_per_reader": 134217728,
+    "output_per_writer": 67108864
+  },
+  "targeted_tests": [
+    "smoke32: cancellation, no duplicate release, write acknowledgement, failed writes, default raw ownership, returned BGR ownership",
+    "smoke33: forced pooling versus disabled pooling, None/repeat mapping, fade, affine, partial spans, RGB opt-out"
+  ],
+  "limits": [
+    "synthetic8bitSDR, one640px patch,4K240frames",
+    "warm OS cache, frequency/background load not controlled",
+    "memory is parent Python peak only, not process tree",
+    "no native-vector runtime changes adopted",
+    "8K and sub-1MiB fallback follows budgets; no8K full benchmark",
+    "not user visual acceptance"
+  ]
+}

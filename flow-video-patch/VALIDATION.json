@@ -789,5 +789,17 @@
     "memory": "parent Python peak255143936→260190208 bytes in one separate production comparison; process tree not measured",
     "full_local_regression_status_at_authoring": "running NumPy/native six-suite matrix; results reported in PR",
     "release_archives": "not rebuilt; unreleased change"
+  },
+  "frame_pool_followup": {
+    "date": "2026-10-31",
+    "baseline": "P1 b585a1e merged via PR26",
+    "scope": "merge-internal raw buffers and encoder-input buffers only; prepare/default Reader/RGB raw storage unchanged",
+    "budgets": "minimum1MiB; at most PREFETCH+2 buffers; per-reader raw128MiB and per-writer output64MiB payload; over-budget frames retain old allocation",
+    "targeted_smoke32_33": "pass: lease cancellation, acknowledgements, failed writes, duplicate release/submission, default Reader and returned-BGR ownership, RGB opt-out, mapping/fade/span full output equality",
+    "paired_prototype_full_cli": "5 alternating frozen-baseline pairs17.8005→14.6561s (17.665%); same output SHA256 and audio",
+    "actual_production_cli": "14.6408s; single production confirmation, not paired performance claim",
+    "parent_python_peak_working_set": "260935680 baseline,260079616 production in separate observation; process tree not measured",
+    "rejected_experiments": "AVX2 kernels and larger pipe retained only as development experiments; no native runtime changes",
+    "full_local_regression_status_at_authoring": "running six suites each in NumPy/native; final results in PR"
   }
 }
