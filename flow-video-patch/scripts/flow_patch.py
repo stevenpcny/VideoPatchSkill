@@ -720,9 +720,19 @@ class Reader:
     given (probe found every frame on the n/fps grid), otherwise by decoded frame number.
     recycle=True is an internal merge opt-in: raw storage may recycle on advance,
     while returned BGR arrays remain owned. Default/RGB/oversize paths do not recycle.
+    view_box optionally limits decoder pipe output to an even-aligned local rectangle;
+    size still describes the source, while get/region/passthrough use local coordinates.
     """
-    def __init__(self, path, size, color=None, start=0, fps=None, recycle=False):
+    def __init__(self, path, size, color=None, start=0, fps=None, recycle=False, view_box=None):
         self.w, self.h = checked_size(size)
+        crop = []
+        if view_box is not None:
+            require(isinstance(view_box,(list,tuple)) and len(view_box)==4 and
+                    all(type(v) is int and v % 2 == 0 for v in view_box), 'Invalid reader view rectangle')
+            x,y,w,h = view_box
+            require(0 <= x < x+w <= self.w and 0 <= y < y+h <= self.h, 'Invalid reader view rectangle')
+            self.w, self.h = w,h
+            crop = [f'crop={w}:{h}:{x}:{y}:exact=1']
         self.color = color or stream_color(path)
         pool = _FramePool(self.w*self.h*3, RAW_POOL_BUDGET) if recycle and not self.color['rgb_input'] else None
         self._raw_pool = pool if pool is not None and pool.limit else None
@@ -738,9 +748,11 @@ class Reader:
             seek = ['-ss', f'{float((start-Fraction(1, 2))/Fraction(fps)):.6f}']
         chain = [f'select=gte(n\\,{start})'] if start and not seek else []
         if self.color['rgb_input']:
-            convert = (['-vf', ','.join(chain)] if chain else [])+['-pix_fmt', fmt]
+            convert = (['-vf', ','.join(chain+crop)] if chain or crop else [])+['-pix_fmt', fmt]
         else:
-            convert = ['-vf', ','.join(chain+[f'scale=in_range={rng}:out_range={rng},format={fmt}'])]
+            # Crop after full-size chroma upsampling: the local edge must retain the same
+            # samples as a full-view Reader, rather than become a new interpolation boundary.
+            convert = ['-vf', ','.join(chain+[f'scale=in_range={rng}:out_range={rng},format={fmt}']+crop)]
         try:
             self.p = decoder_process([FFMPEG, '-v', 'error', '-noautorotate', *seek, *file_input(path),
                                      '-map', '0:v:0', '-an', '-fps_mode', 'passthrough',
@@ -1266,13 +1278,40 @@ def chroma_groups(active):
     return [([active[n] for n in sorted(ns)], box) for ns, box in groups]
 
 
-def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, bframes=None):
+def structure_preview(cfg, info, plans, span=None):
+    """Check-only recipe and original-pixel view; never mutates the delivery configuration.
+
+    Cover every mapped crop in the requested interval plus 64 source pixels of context.
+    Even boundaries keep the source chroma grid. This does not infer occluders or repair geometry.
+    """
+    first, last = span or (0, info['frames'])
+    boxes = [rectangle(p['crop'], i, info['size'])
+             for p,q in zip(cfg['patches'], plans)
+             for i in range(max(first,p['target'][0]), min(last,p['target'][1]))
+             if q['indices'][i-p['target'][0]] is not None]
+    require(boxes, 'Structure preview interval has no mapped patch frames')
+    x0 = max(0, (min(x for x,y,w,h in boxes)-64)//2*2)
+    y0 = max(0, (min(y for x,y,w,h in boxes)-64)//2*2)
+    x1 = min(info['size'][0], (max(x+w for x,y,w,h in boxes)+65)//2*2)
+    y1 = min(info['size'][1], (max(y+h for x,y,w,h in boxes)+65)//2*2)
+    effective = dict(cfg, patches=[dict(p, blend='alpha', gain_bgr=[1,1,1], offset_bgr=[0,0,0])
+                                   for p in cfg['patches']])
+    return effective, [x0,y0,x1-x0,y1-y0]
+
+
+def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, bframes=None,
+            view_box=None):
     """Encode one output. A merge span=(first,last) exports only those source frames, with the
-    matching audio re-encoded; segment=True makes it video-only for joining."""
+    matching audio re-encoded; segment=True makes it video-only for joining.
+    A check-only view_box must contain every active crop; geometry stays in source coordinates.
+    """
     with contextlib.ExitStack() as stack:
+        require(view_box is None or mode == 'merge', 'Local view applies to merge only')
+        vx, vy = view_box[:2] if view_box is not None else (0,0)
         start = plan['first'] if mode == 'prepare' else (span or (0,))[0]
         grid = lambda i: i['fps'] if i.get('on_frame_grid') else None
-        source = Reader(cfg['source'], info['size'], info['color'], start, grid(info), recycle=mode=='merge')
+        source = Reader(cfg['source'], info['size'], info['color'], start, grid(info), recycle=mode=='merge',
+                        **({'view_box':view_box} if view_box is not None else {}))
         stack.callback(source.close)
         if mode == 'prepare':
             p = cfg['prepare']; size = plan['size']
@@ -1294,9 +1333,10 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                                       min(used, default=0), grid(q['info']), recycle=True))
                 stack.callback(readers[-1].close)
             af = None if span is None else trimmed_audio(first, last, Fraction(info['fps']))
-            cmd = encoder(out, size, info['fps'], cfg['source'], info['color'], af,
+            output_size = view_box[2:] if view_box is not None else size
+            cmd = encoder(out, output_size, info['fps'], cfg['source'], info['color'], af,
                           audio=not segment, preset=preset, bframes=bframes)
-            plan = {'size': size, 'frames': last-first, 'audio': info['audio']}
+            plan = {'size': output_size, 'frames': last-first, 'audio': info['audio']}
         log = stack.enter_context(tempfile.TemporaryFile())
         enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=log)
         out_frames = FrameWriter(enc.stdin)
@@ -1320,12 +1360,13 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                         if j is not None:
                             active.append((p,q,reader,j,rectangle(p['crop'], i, size)))
                     # Pixels outside every patch support go out as decoded, without an RGB round trip.
-                    buffer = None if source.color['rgb_input'] else out_frames.acquire(size[0]*size[1]*3//2)
+                    output_size = view_box[2:] if view_box is not None else size
+                    buffer = None if source.color['rgb_input'] else out_frames.acquire(output_size[0]*output_size[1]*3//2)
                     frame, Y, U, V = source.passthrough420(i, buffer)
                     # Patches far apart are converted in separate even-aligned boxes (not one union box),
                     # so chroma blocks touching a patch are still recomputed whole.
                     for members, (x0, y0, x1, y1) in chroma_groups(active):
-                        scene = source.region(i,(x0,y0,x1-x0,y1-y0))
+                        scene = source.region(i,(x0-vx,y0-vy,x1-x0,y1-y0))
                         changed = np.zeros(scene.shape[:2], bool)
                         for p,q,reader,j,(x,y,w,h) in members:
                             x -= x0; y -= y0; ws = tuple(p['work_size'])
@@ -1354,10 +1395,11 @@ def process(cfg, info, mode, out, plan, span=None, segment=False, preset=None, b
                                 in_bands(h, work)
                             changed[y:y+h,x:x+w] |= support
                         _, Yr, Ur, Vr = planes420(bgr_to_yuv420(scene, info['color']), x1-x0, y1-y0)
-                        Y[y0:y1,x0:x1][changed] = Yr[changed]
+                        ox0, oy0, ox1, oy1 = x0-vx, y0-vy, x1-vx, y1-vy
+                        Y[oy0:oy1,ox0:ox1][changed] = Yr[changed]
                         block = changed.reshape((y1-y0)//2, 2, (x1-x0)//2, 2).any((1, 3))
-                        U[y0//2:y1//2,x0//2:x1//2][block] = Ur[block]
-                        V[y0//2:y1//2,x0//2:x1//2][block] = Vr[block]
+                        U[oy0//2:oy1//2,ox0//2:ox1//2][block] = Ur[block]
+                        V[oy0//2:oy1//2,ox0//2:ox1//2][block] = Vr[block]
                     out_frames.write(frame)
             except OSError as e:
                 # Encoder stopped reading; its own log below says why.
@@ -1731,6 +1773,9 @@ def main():
                         help='merge only: copy unpatched source GOPs bit for bit, re-encode only GOPs with patches')
     parser.add_argument('--preview',action='store_true',
                         help='merge only: fast ultrafast encode for checking (not deliverable)')
+    parser.add_argument('--structure-preview',action='store_true',
+                        help='merge only: original-pixel local view, alpha blend, no fixed color transform; '
+                             'fast geometry/occlusion check, not deliverable')
     args = parser.parse_args()
     for t in (FFMPEG,FFPROBE):
         require(shutil.which(t), f'Tool missing: {t}; see references/install.md')
@@ -1774,15 +1819,18 @@ def main():
         print(f"PASS: {output} (timestamps moved at most {result['max_timestamp_shift_ms']} ms; frames and "
               f"audio unchanged)\nReport: {report}"); return
     require(args.config is not None and args.output is not None, '--config and --output required')
-    require(args.mode == 'merge' or not (args.frames or args.preview or args.copy_unpatched),
-            '--frames/--preview apply to merge only; Flow uploads always use the full prepare encode')
+    require(args.mode == 'merge' or not (args.frames or args.preview or args.copy_unpatched or args.structure_preview),
+            '--frames/--preview/--structure-preview apply to merge only; '
+            'Flow uploads always use the full prepare encode')
     span = None
     if args.frames is not None:
         parts = args.frames.split(':')
         require(len(parts) == 2 and all(v.isdigit() for v in parts), '--frames must be START:END')
         span = (int(parts[0]), int(parts[1]))
-    preset = 'ultrafast' if args.preview else None  # None: FLOW_X264_PRESET
-    deliverable = span is None and not args.preview
+    require(not (args.structure_preview and args.copy_unpatched),
+            '--structure-preview cannot use --copy-unpatched')
+    preset = 'ultrafast' if args.preview or args.structure_preview else None  # None: FLOW_X264_PRESET
+    deliverable = span is None and not (args.preview or args.structure_preview)
     # A hardware encoder may make check-only exports; deliverables need a quality comparison first.
     hardware = video_encoder() != 'libx264'
     require(not hardware or not deliverable or os.environ.get('FLOW_HW_DELIVERABLE') == '1',
@@ -1799,14 +1847,19 @@ def main():
     # A dry run is a full plan check, with or without --frames.
     checked = None if args.dry_run else span
     plan = prepare_plan(cfg,info) if args.mode == 'prepare' else merge_plan(cfg,info,checked)
+    render_cfg, view_box = (structure_preview(cfg,info,plan,span) if args.structure_preview else (cfg,None))
     notices = output_notices(info, args.mode)
+    if args.structure_preview:
+        notices.append('Structure check only: local original-pixel view, alpha blend, fixed color transform '
+                       'disabled; geometry/mapping/matte/fades unchanged. Color and final blend are not assessed.')
     if hardware:
         notices.append(f'Video encoder {video_encoder()} (hardware); compare quality with libx264 '
                        'before relying on it')
     for note in notices:
         print('NOTICE: '+note, file=sys.stderr)
     if args.dry_run:
-        print(json.dumps({'mode':args.mode,'config':cfg,'source_info':info,'plan':plan,'notices':notices},
+        print(json.dumps({'mode':args.mode,'config':cfg,'source_info':info,'plan':plan,'notices':notices,
+                          'structure_view_box':view_box},
                          ensure_ascii=False,indent=2)); return
     output = output_path(args.output); report = output_path(output.with_suffix('.report.json'))
     require(output.suffix.lower() in ('.mp4','.mov','.mkv'), 'Output must be MP4/MOV/MKV')
@@ -1833,7 +1886,7 @@ def main():
             if reason is not None:
                 notices.append(f'--copy-unpatched not used ({reason}); rendered in full instead')
                 print('NOTICE: '+notices[-1], file=sys.stderr)
-        count = segment_count(info['frames']) if args.mode == 'merge' and span is None else 1
+        count = segment_count(info['frames']) if args.mode == 'merge' and span is None and not args.structure_preview else 1
         if smart is not None:
             plan = plan_used
             if smart['copied_frames'] == 0:
@@ -1843,7 +1896,7 @@ def main():
         elif count > 1:
             plan,cmd = merge_segmented(cfg,info,plan,temp,count,preset)
         else:
-            plan,cmd = process(cfg,info,args.mode,temp,plan,span,preset=preset)
+            plan,cmd = process(render_cfg,info,args.mode,temp,plan,span,preset=preset,view_box=view_box)
         expected = dict(plan,fps=info['fps'])
         # A partial export re-encodes its audio slice, so only full merges compare audio payloads.
         result = verify(cfg['source'],temp,expected,args.mode=='merge' and span is None)
@@ -1853,7 +1906,13 @@ def main():
                       visual_review='pending: decode/frame/audio checks do not prove visual quality or lip sync')
         if args.mode == 'merge':
             result['scope'] = {'frames': list(span) if span else [0, info['frames']],
-                               'preview_encode': args.preview, 'deliverable': deliverable}
+                               'preview_encode': preset == 'ultrafast', 'deliverable': deliverable}
+            if args.structure_preview:
+                result['scope']['structure_preview'] = {
+                    'view_box_source_xywh':view_box, 'source_frame_at_output_zero':span[0] if span else 0,
+                    'scale':1, 'context_pixels':64, 'blend':'alpha', 'fixed_color_transform':False,
+                    'coverage':'local view only; global context and final blend require separate review'}
+                result['effective_configuration'] = render_cfg
             if span:
                 result['scope']['per_frame_checks'] = 'exported frames only; a full export checks every patch frame'
         if not deliverable:
