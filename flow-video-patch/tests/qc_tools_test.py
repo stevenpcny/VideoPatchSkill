@@ -143,6 +143,27 @@ class QcTools(unittest.TestCase):
         seam = qc_tools.cmd_seam(argparse.Namespace(config=str(cfg), patch=0, step=30//4, sigma=3, threshold=12))
         self.assertEqual(shared['seam'], seam['summary'])
 
+    def test_offset_reads_each_file_once_for_both_regions(self):
+        import flow_patch as fp
+        import qc_tools
+        readers = []; reader = fp.Reader
+        def counted_reader(path, *args, **kwargs):
+            readers.append(Path(path).name); return reader(path, *args, **kwargs)
+        self.addCleanup(setattr, fp, 'Reader', reader); fp.Reader = counted_reader
+        a = argparse.Namespace(upload=str(self.up), returned=str(self.ret), region=[0, 110, 160, 50],
+                               motion_region=[0, 60, 60, 50], max_shift=4)
+        r = qc_tools.cmd_offset(a)
+        self.assertEqual(readers, ['up.mp4', 'ret.mp4'])
+        self.assertEqual({v['best_offset'] for v in r['offset_scan'].values()}, {2})
+        # Same numbers as measuring each region on its own read.
+        alone = qc_tools.cmd_offset(argparse.Namespace(**dict(vars(a), motion_region=None)))
+        self.assertEqual(alone['offset_scan'], r['offset_scan'])
+        Um = [qc_tools.gray_region(f, a.motion_region) for _, f in qc_tools.frames(self.up)]
+        Gm = [qc_tools.gray_region(f, a.motion_region) for _, f in qc_tools.frames(self.ret)]
+        sh = [float(np.hypot(*cv2.phaseCorrelate(Um[j], Gm[j])[0])) for j in range(28)]
+        self.assertEqual(r['residual_shift_px'], {'mean': round(float(np.mean(sh)), 3),
+                                                  'max': round(float(np.max(sh)), 3)})
+
     def test_shared_probe_rereads_replaced_file_and_strict_requests(self):
         import flow_patch as fp
         base = Path(self.tmp.name); clip = base/'replaced.mp4'; other = base/'replacement.mp4'

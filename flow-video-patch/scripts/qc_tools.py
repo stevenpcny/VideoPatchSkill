@@ -68,10 +68,19 @@ def gray_region(f, r):
     return cv2.cvtColor(f[y:y+h, x:x+w], cv2.COLOR_BGR2GRAY).astype(np.float32)
 
 
+def gray_regions(path, rects):
+    """Per-frame grayscale crops of several rectangles from one sequential read."""
+    out = [[] for _ in rects]
+    for _, f in frames(path):
+        for crops, r in zip(out, rects):
+            crops.append(gray_region(f, r))
+    return out
+
+
 @shared_probes
 def cmd_offset(a):
-    U = [gray_region(f, a.region) for _, f in frames(a.upload)]
-    G = [gray_region(f, a.region) for _, f in frames(a.returned)]
+    rects = [a.region] + ([a.motion_region] if a.motion_region else [])
+    (U, *Um), (G, *Gm) = gray_regions(a.upload, rects), gray_regions(a.returned, rects)
     U, G = np.array(U), np.array(G)
     m = min(len(U), len(G)); halves = {'first_half': (0, m // 2), 'second_half': (m // 2, m)}
     scan = {}
@@ -85,8 +94,7 @@ def cmd_offset(a):
     out = {'upload_frames': len(U), 'returned_frames': len(G), 'offset_scan': scan,
            'note': 'offset k means returned frame j matches upload frame j+k; equal best offsets in both halves = no drift'}
     if a.motion_region:
-        Um = [gray_region(f, a.motion_region) for _, f in frames(a.upload)]
-        Gm = [gray_region(f, a.motion_region) for _, f in frames(a.returned)]
+        Um, Gm = Um[0], Gm[0]
         sh = [float(np.hypot(*cv2.phaseCorrelate(Um[j], Gm[j])[0])) for j in range(m)]
         out['residual_shift_px'] = {'mean': round(float(np.mean(sh)), 3), 'max': round(float(np.max(sh)), 3)}
     return out
