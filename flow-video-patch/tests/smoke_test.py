@@ -801,5 +801,133 @@ class Smoke(unittest.TestCase):
             finally:reader.close()
 
 
+    def test_34_structure_view_matches_full_alpha_before_encoding(self):
+        # Nonzero view origin, odd moving crops, subpixel affine, null/repeat mappings,
+        # fades and a protected mouth must survive the check-only path unchanged.
+        source=self.base/'structure-source.mp4'
+        fp.run([fp.FFMPEG,'-v','error','-n','-i',self.source,'-vf','pad=384:256:100:64',
+                '-c:v','libx264','-crf','10','-c:a','copy',source])
+        indices=list(range(23))+[22];indices[5]=None
+        p=self.patch(crop=[dict(frame=0,value=[99,65,96,128]),
+                           dict(frame=23,value=[109,65,96,128])],
+                     frame_map=indices,fade_frames=3,gain_bgr=[.5,1.2,.8],offset_bgr=[30,0,-10],
+                     source_to_generated_affine=[1,0,.25,0,1,-.5])
+        cfg=fp.load(self.config('structure-oracle',source=str(source),source_size=[384,256],patches=[p]))
+        saved=json.dumps(cfg,sort_keys=True);info=fp.validate_source(cfg)
+        plans=fp.merge_plan(cfg,info)
+        effective,box=fp.structure_preview(cfg,info,plans,(2,16))
+        self.assertEqual(json.dumps(cfg,sort_keys=True),saved)
+        self.assertEqual(effective['patches'][0]['gain_bgr'],[1,1,1])
+        self.assertEqual(effective['patches'][0]['matte'],p['matte'])
+        self.assertGreater(box[0],0);self.assertGreaterEqual(box[1],0)
+        self.assertTrue(all(v%2==0 for v in box))
+        captured=[];original_write=fp.FrameWriter.write
+        def capture(writer,frame):
+            captured.append(bytes(frame));return original_write(writer,frame)
+        results=[]
+        with mock.patch.object(fp.FrameWriter,'write',capture):
+            for name,view in [('full',None),('local',box)]:
+                captured.clear();out=self.base/f'structure-{name}.mp4'
+                plan,_=fp.process(effective,info,'merge',out,plans,(2,16),preset='ultrafast',view_box=view)
+                fp.verify(source,out,dict(plan,fps=info['fps']),False)
+                results.append(list(captured))
+        x,y,w,h=box
+        for full,local in zip(*results):
+            _,Y,U,V=fp.planes420(full,384,256)
+            expected=b''.join(c.tobytes() for c in (Y[y:y+h,x:x+w],
+                            U[y//2:(y+h)//2,x//2:(x+w)//2],V[y//2:(y+h)//2,x//2:(x+w)//2]))
+            self.assertEqual(local,expected)
+        self.assertEqual(len(results[0]),14)
+        # A missing patch frame is source-only, not silently held or removed.
+        reader=fp.Reader(source,info['size'],info['color'],view_box=box)
+        try:self.assertEqual(results[1][3],bytes(reader.passthrough420(5)[0]))
+        finally:reader.close()
+        # Every even-aligned crop retains the full-view source chroma grid.
+        rgb=self.base/'structure-rgb.nut'
+        fp.run([fp.FFMPEG,'-v','error','-n','-f','lavfi','-i','testsrc2=s=192x128:r=24',
+                '-frames:v','12','-c:v','rawvideo','-pix_fmt','bgr24',rgb])
+        for path in (source,self.source,rgb):
+            meta=fp.probe(path);reader=fp.Reader(path,meta['size'],meta['color'])
+            try:
+                for rect in ([2,2,64,32],[0,0,96,128]):
+                    local=fp.Reader(path,meta['size'],meta['color'],view_box=rect)
+                    try:raw=local.passthrough420(0)[0]
+                    finally:local.close()
+                    _,Y,U,V=reader.passthrough420(0)
+                    x,y,w,h=rect
+                    self.assertEqual(bytes(raw),b''.join(c.tobytes() for c in (
+                        Y[y:y+h,x:x+w],U[y//2:(y+h)//2,x//2:(x+w)//2],
+                        V[y//2:(y+h)//2,x//2:(x+w)//2])))
+                with self.assertRaisesRegex(ValueError,'view rectangle'):
+                    fp.Reader(path,meta['size'],meta['color'],view_box=[1,0,64,32])
+            finally:reader.close()
+
+    def test_35_structure_cli_scope_and_safety(self):
+        p=self.patch(blend='multiband',levels=3,matte=dict(region=[16,16,64,96],feather=8),
+                     gain_bgr=[.5,1,1],offset_bgr=[30,0,0])
+        config=self.config('structure-cli',patches=[p]);before=config.read_bytes()
+        out=self.base/'structure-cli.mp4'
+        cli('merge','--config',config,'--output',out,'--structure-preview','--frames','3:12')
+        report=json.loads(out.with_suffix('.report.json').read_text(encoding='utf-8'))
+        scope=report['scope'];view=scope['structure_preview']
+        self.assertFalse(scope['deliverable']);self.assertTrue(scope['preview_encode'])
+        self.assertEqual(scope['frames'],[3,12]);self.assertEqual(view['source_frame_at_output_zero'],3)
+        self.assertEqual(report['output']['size'],view['view_box_source_xywh'][2:])
+        self.assertEqual(report['output']['frames'],9);self.assertTrue(report['decode_pass'])
+        self.assertEqual(report['configuration']['patches'][0]['blend'],'multiband')
+        self.assertEqual(report['effective_configuration']['patches'][0]['blend'],'alpha')
+        self.assertEqual(config.read_bytes(),before)
+        self.assertFalse(out.with_suffix('.visual-review.json').exists())
+        rejected=cli('merge','--config',config,'--output',self.base/'invalid-copy.mp4',
+                     '--structure-preview','--copy-unpatched',ok=False)
+        self.assertIn('cannot use',rejected.stderr)
+        cli('prepare','--config',config,'--output',self.base/'invalid-prepare.mp4',
+            '--structure-preview',ok=False)
+        # Original delivery parameters are validated before any simplified recipe is applied.
+        bad=self.config('invalid-color-structure',patches=[self.patch(gain_bgr=[0,1,1])])
+        rejected=cli('merge','--config',bad,'--output',self.base/'invalid-color.mp4',
+                     '--structure-preview',ok=False)
+        self.assertIn('Invalid fixed color transform',rejected.stderr)
+        empty=self.config('structure-empty',patches=[self.patch(frame_map=[None]*24)])
+        rejected=cli('merge','--config',empty,'--output',self.base/'empty.mp4',
+                     '--structure-preview',ok=False)
+        self.assertIn('no mapped patch frames',rejected.stderr)
+
+    def test_36_structure_preview_keeps_known_seam_and_occlusion_defects(self):
+        # A seam crossing line jumps four pixels in the return. An occluder is erased.
+        # The check recipe must reveal both, and respect the same protection if supplied.
+        source=self.base/'defect-source.mp4';generated=self.base/'defect-return.mp4'
+        im=np.full((256,384,3),40,np.uint8)
+        im[80:84,40:344]=230
+        im[96:174,144:152]=[20,220,20]
+        returned=im[64:192,100:196].copy()
+        returned[16:20]=40;returned[20:24]=230
+        returned[32:110,44:52]=[20,20,220]
+        encode(source,[im.copy() for _ in range(24)])
+        encode(generated,[returned.copy() for _ in range(24)])
+        p=self.patch(generated=str(generated),crop=[100,64,96,128],
+                     matte=dict(region=[8,8,80,112],feather=4),blend='multiband',levels=3)
+        cfg=fp.load(self.config('defects',source=str(source),source_size=[384,256],patches=[p]))
+        info=fp.validate_source(cfg);plans=fp.merge_plan(cfg,info)
+        effective,box=fp.structure_preview(cfg,info,plans)
+        out=self.base/'defects.mp4'
+        fp.process(effective,info,'merge',out,plans,preset='ultrafast',view_box=box)
+        actual=image(out,12);x,y,_,_=box
+        # There is a visible step at the mask edge; the internal line was not smoothed away.
+        self.assertLess(actual[81-y,130-x].mean(),75)
+        self.assertGreater(actual[85-y,130-x].mean(),180)
+        self.assertGreater(actual[81-y,104-x].mean(),180)
+        wrong=actual[120-y,148-x].astype(int)
+        self.assertGreater(wrong[2]-wrong[1],120,'bad foreground order was concealed')
+        # The correct foreground layer must also survive the simplified recipe.
+        p=dict(p,blend='alpha',matte=dict(region=[8,8,80,112],feather=4,protect=[[44,32,8,78]]))
+        cfg=dict(cfg,patches=[p]);plans=fp.merge_plan(cfg,info)
+        effective,box=fp.structure_preview(cfg,info,plans)
+        out=self.base/'defects-protected.mp4'
+        fp.process(effective,info,'merge',out,plans,preset='ultrafast',view_box=box)
+        correct=image(out,12)[120-y,148-x].astype(int)
+        self.assertGreater(correct[1]-correct[2],120,'foreground protection was lost')
+
+
 if __name__=='__main__':
     unittest.main(verbosity=2)

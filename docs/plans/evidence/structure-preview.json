@@ -1,0 +1,678 @@
+{
+  "base_commit": "f53390a2fe23755adbabf303407f7f5739219354",
+  "implementation_sha256": "1450a67b8606dcf9987aa7dfeb5f30103d449dad4d23b9cb5a0d15e08361f37a",
+  "native_library_sha256": "cb790c4cb509bb5fc3c25acdd39035ca0c0149da5dea6b1a40287c3f2585bf82",
+  "synthetic_fixture": {
+    "source_size": [
+      3840,
+      2160
+    ],
+    "fps": 24,
+    "frames": 240,
+    "patch_size": [
+      640,
+      640
+    ],
+    "crop": [
+      400,
+      400,
+      640,
+      640
+    ],
+    "levels": 3,
+    "gain_bgr": [
+      1.01,
+      0.99,
+      1
+    ],
+    "offset_bgr": [
+      1,
+      0,
+      -1
+    ],
+    "source_sha256": "721d659a51afb436a806c94308357db20ec7fb59ba0031dd9f6da13c19c8a85d",
+    "generated_sha256": "532e5f812c410c5e5fa600ee2ccabfc877a438678b68614e399aba515a7576ad",
+    "audio_payload_sha256": "SHA256=780b7bd595f1ed0975836ffe8d3ed5805eb9d3c8b27660e74679acac75065c6a"
+  },
+  "environment": {
+    "os": "Windows",
+    "process_threads": 4,
+    "encode_threads": 4,
+    "kernels": "existing native ABI 1",
+    "tools": [
+      {
+        "tool": "CPython",
+        "version": "3.13.16",
+        "allowlist": "default",
+        "license_reference": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "tool": "NumPy",
+        "version": "2.5.4",
+        "allowlist": "default",
+        "license_reference": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "tool": "OpenCV",
+        "version": "cv2 5.0.0 (opencv-python 5.0.0.93)",
+        "allowlist": "default",
+        "license_reference": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "tool": "FFmpeg",
+        "version": "ffmpeg version 9.0.2-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+        "allowlist": "default",
+        "license_reference": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "tool": "ffprobe",
+        "version": "ffprobe version 9.0.2-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers",
+        "allowlist": "default",
+        "license_reference": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "tool": "video encoder",
+        "version": "libx264",
+        "license_reference": "THIRD_PARTY_NOTICES.md",
+        "allowlist": "default"
+      },
+      {
+        "tool": "flow_kernels (native/)",
+        "version": "ABI 1, built locally",
+        "allowlist": "optional: flow_kernels_native (TOOL_POLICY.json)",
+        "license_reference": "THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "limitations": [
+      "OS caches uncontrolled/warm",
+      "background load and CPU frequency uncontrolled",
+      "no concurrent regressions or media experiments during official timings",
+      "synthetic media only; no user footage or human review-time measurement"
+    ]
+  },
+  "full_empty_probe_cache": {
+    "scope": "complete fresh CLI; empty input probe cache per trial; warm/uncontrolled OS cache",
+    "frames": null,
+    "kernels": "native",
+    "source_sha256": "1450a67b8606dcf9987aa7dfeb5f30103d449dad4d23b9cb5a0d15e08361f37a",
+    "pairs": [
+      {
+        "order": [
+          "preview",
+          "structure"
+        ],
+        "preview": {
+          "seconds": 14.03586300000461,
+          "output_sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "size": [
+            3840,
+            2160
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false
+          }
+        },
+        "structure": {
+          "seconds": 9.120585200005735,
+          "output_sha256": "baa1cf7d7cee5deb1adf41b24d2ea2d319340148b114abd806b71d42ca3e2f5b",
+          "size": [
+            768,
+            768
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "structure_preview": {
+              "view_box_source_xywh": [
+                336,
+                336,
+                768,
+                768
+              ],
+              "source_frame_at_output_zero": 0,
+              "scale": 1,
+              "context_pixels": 64,
+              "blend": "alpha",
+              "fixed_color_transform": false,
+              "coverage": "local view only; global context and final blend require separate review"
+            }
+          }
+        }
+      },
+      {
+        "order": [
+          "structure",
+          "preview"
+        ],
+        "structure": {
+          "seconds": 9.097002900001826,
+          "output_sha256": "baa1cf7d7cee5deb1adf41b24d2ea2d319340148b114abd806b71d42ca3e2f5b",
+          "size": [
+            768,
+            768
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "structure_preview": {
+              "view_box_source_xywh": [
+                336,
+                336,
+                768,
+                768
+              ],
+              "source_frame_at_output_zero": 0,
+              "scale": 1,
+              "context_pixels": 64,
+              "blend": "alpha",
+              "fixed_color_transform": false,
+              "coverage": "local view only; global context and final blend require separate review"
+            }
+          }
+        },
+        "preview": {
+          "seconds": 14.069364299997687,
+          "output_sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "size": [
+            3840,
+            2160
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false
+          }
+        }
+      },
+      {
+        "order": [
+          "preview",
+          "structure"
+        ],
+        "preview": {
+          "seconds": 14.112395500000275,
+          "output_sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "size": [
+            3840,
+            2160
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false
+          }
+        },
+        "structure": {
+          "seconds": 9.079665099998238,
+          "output_sha256": "baa1cf7d7cee5deb1adf41b24d2ea2d319340148b114abd806b71d42ca3e2f5b",
+          "size": [
+            768,
+            768
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "structure_preview": {
+              "view_box_source_xywh": [
+                336,
+                336,
+                768,
+                768
+              ],
+              "source_frame_at_output_zero": 0,
+              "scale": 1,
+              "context_pixels": 64,
+              "blend": "alpha",
+              "fixed_color_transform": false,
+              "coverage": "local view only; global context and final blend require separate review"
+            }
+          }
+        }
+      },
+      {
+        "order": [
+          "structure",
+          "preview"
+        ],
+        "structure": {
+          "seconds": 9.015972000001057,
+          "output_sha256": "baa1cf7d7cee5deb1adf41b24d2ea2d319340148b114abd806b71d42ca3e2f5b",
+          "size": [
+            768,
+            768
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "structure_preview": {
+              "view_box_source_xywh": [
+                336,
+                336,
+                768,
+                768
+              ],
+              "source_frame_at_output_zero": 0,
+              "scale": 1,
+              "context_pixels": 64,
+              "blend": "alpha",
+              "fixed_color_transform": false,
+              "coverage": "local view only; global context and final blend require separate review"
+            }
+          }
+        },
+        "preview": {
+          "seconds": 14.137743300001603,
+          "output_sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "size": [
+            3840,
+            2160
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false
+          }
+        }
+      },
+      {
+        "order": [
+          "preview",
+          "structure"
+        ],
+        "preview": {
+          "seconds": 14.15125789999729,
+          "output_sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+          "size": [
+            3840,
+            2160
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false
+          }
+        },
+        "structure": {
+          "seconds": 8.952246300003026,
+          "output_sha256": "baa1cf7d7cee5deb1adf41b24d2ea2d319340148b114abd806b71d42ca3e2f5b",
+          "size": [
+            768,
+            768
+          ],
+          "frames": 240,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              0,
+              240
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "structure_preview": {
+              "view_box_source_xywh": [
+                336,
+                336,
+                768,
+                768
+              ],
+              "source_frame_at_output_zero": 0,
+              "scale": 1,
+              "context_pixels": 64,
+              "blend": "alpha",
+              "fixed_color_transform": false,
+              "coverage": "local view only; global context and final blend require separate review"
+            }
+          }
+        }
+      }
+    ],
+    "medians_seconds": {
+      "preview": 14.112395500000275,
+      "structure": 9.079665099998238
+    },
+    "saved_percent": 35.661772659375515,
+    "speedup": 1.5542859064265504
+  },
+  "short_48_96_warm_probe_cache": {
+    "scope": "complete fresh CLI; warm input probe cache per trial; warm/uncontrolled OS cache",
+    "frames": "48:96",
+    "kernels": "native",
+    "source_sha256": "1450a67b8606dcf9987aa7dfeb5f30103d449dad4d23b9cb5a0d15e08361f37a",
+    "pairs": [
+      {
+        "order": [
+          "preview",
+          "structure"
+        ],
+        "preview": {
+          "seconds": 4.37308540000231,
+          "output_sha256": "0a2d3c3f595617345bdf75213f7f1ed2655ed57bb77bf216844f58d2e5b006b4",
+          "size": [
+            3840,
+            2160
+          ],
+          "frames": 48,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              48,
+              96
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "per_frame_checks": "exported frames only; a full export checks every patch frame"
+          }
+        },
+        "structure": {
+          "seconds": 3.052872500004014,
+          "output_sha256": "6c8e010bbf10c47f13e75391f144818ac071944252e0f159041943d18c5292a3",
+          "size": [
+            768,
+            768
+          ],
+          "frames": 48,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              48,
+              96
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "structure_preview": {
+              "view_box_source_xywh": [
+                336,
+                336,
+                768,
+                768
+              ],
+              "source_frame_at_output_zero": 48,
+              "scale": 1,
+              "context_pixels": 64,
+              "blend": "alpha",
+              "fixed_color_transform": false,
+              "coverage": "local view only; global context and final blend require separate review"
+            },
+            "per_frame_checks": "exported frames only; a full export checks every patch frame"
+          }
+        }
+      },
+      {
+        "order": [
+          "structure",
+          "preview"
+        ],
+        "structure": {
+          "seconds": 3.091344600004959,
+          "output_sha256": "6c8e010bbf10c47f13e75391f144818ac071944252e0f159041943d18c5292a3",
+          "size": [
+            768,
+            768
+          ],
+          "frames": 48,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              48,
+              96
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "structure_preview": {
+              "view_box_source_xywh": [
+                336,
+                336,
+                768,
+                768
+              ],
+              "source_frame_at_output_zero": 48,
+              "scale": 1,
+              "context_pixels": 64,
+              "blend": "alpha",
+              "fixed_color_transform": false,
+              "coverage": "local view only; global context and final blend require separate review"
+            },
+            "per_frame_checks": "exported frames only; a full export checks every patch frame"
+          }
+        },
+        "preview": {
+          "seconds": 4.254712499998277,
+          "output_sha256": "0a2d3c3f595617345bdf75213f7f1ed2655ed57bb77bf216844f58d2e5b006b4",
+          "size": [
+            3840,
+            2160
+          ],
+          "frames": 48,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              48,
+              96
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "per_frame_checks": "exported frames only; a full export checks every patch frame"
+          }
+        }
+      },
+      {
+        "order": [
+          "preview",
+          "structure"
+        ],
+        "preview": {
+          "seconds": 4.304527000000235,
+          "output_sha256": "0a2d3c3f595617345bdf75213f7f1ed2655ed57bb77bf216844f58d2e5b006b4",
+          "size": [
+            3840,
+            2160
+          ],
+          "frames": 48,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              48,
+              96
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "per_frame_checks": "exported frames only; a full export checks every patch frame"
+          }
+        },
+        "structure": {
+          "seconds": 3.0703639999992447,
+          "output_sha256": "6c8e010bbf10c47f13e75391f144818ac071944252e0f159041943d18c5292a3",
+          "size": [
+            768,
+            768
+          ],
+          "frames": 48,
+          "fps": "24",
+          "decode_pass": true,
+          "scope": {
+            "frames": [
+              48,
+              96
+            ],
+            "preview_encode": true,
+            "deliverable": false,
+            "structure_preview": {
+              "view_box_source_xywh": [
+                336,
+                336,
+                768,
+                768
+              ],
+              "source_frame_at_output_zero": 48,
+              "scale": 1,
+              "context_pixels": 64,
+              "blend": "alpha",
+              "fixed_color_transform": false,
+              "coverage": "local view only; global context and final blend require separate review"
+            },
+            "per_frame_checks": "exported frames only; a full export checks every patch frame"
+          }
+        }
+      }
+    ],
+    "medians_seconds": {
+      "preview": 4.304527000000235,
+      "structure": 3.0703639999992447
+    },
+    "saved_percent": 28.671280259153274,
+    "speedup": 1.4019598327759488
+  },
+  "quality": {
+    "full_preview_matches_pr27_fixture_sha256": "0023bfbc0ed77ecadf811609cabf98cfdcb0108fb10956545de3859771b48269",
+    "local_equals_full_alpha_crop_before_encoding": "all 14 exported frames, every Y/U/V byte; smoke34",
+    "known_seam_step_px": 4,
+    "known_occlusion_error_retained": true,
+    "protected_foreground_restored": true,
+    "original_configuration_unchanged": true,
+    "visual_review": "synthetic same-frame image only; no real-footage acceptance or normal-speed playback claimed",
+    "excluded_pilots": [
+      "first pilot changed help/docstrings during run",
+      "second pilot overlapped a short synthetic control render"
+    ]
+  },
+  "regressions": [
+    {
+      "kernels": "numpy",
+      "suite": "smoke_test.py",
+      "exit_code": 0,
+      "seconds": 138.65645389999554
+    },
+    {
+      "kernels": "numpy",
+      "suite": "security_test.py",
+      "exit_code": 0,
+      "seconds": 3.059187999999267
+    },
+    {
+      "kernels": "numpy",
+      "suite": "qc_tools_test.py",
+      "exit_code": 0,
+      "seconds": 19.1125966000036
+    },
+    {
+      "kernels": "numpy",
+      "suite": "color_pipeline_test.py",
+      "exit_code": 0,
+      "seconds": 15.040983400002006
+    },
+    {
+      "kernels": "numpy",
+      "suite": "remote_run_test.py",
+      "exit_code": 0,
+      "seconds": 20.583978200003912
+    },
+    {
+      "kernels": "numpy",
+      "suite": "ffmpeg_regression.sh",
+      "exit_code": 0,
+      "seconds": 1.8836165999964578
+    },
+    {
+      "kernels": "native",
+      "suite": "smoke_test.py",
+      "exit_code": 0,
+      "seconds": 132.295343699996
+    },
+    {
+      "kernels": "native",
+      "suite": "security_test.py",
+      "exit_code": 0,
+      "seconds": 3.0039073000007193
+    },
+    {
+      "kernels": "native",
+      "suite": "qc_tools_test.py",
+      "exit_code": 0,
+      "seconds": 18.951746500002628
+    },
+    {
+      "kernels": "native",
+      "suite": "color_pipeline_test.py",
+      "exit_code": 0,
+      "seconds": 14.4978007000027
+    },
+    {
+      "kernels": "native",
+      "suite": "remote_run_test.py",
+      "exit_code": 0,
+      "seconds": 21.191765900002792
+    },
+    {
+      "kernels": "native",
+      "suite": "ffmpeg_regression.sh",
+      "exit_code": 0,
+      "seconds": 1.9170060999967973
+    }
+  ]
+}

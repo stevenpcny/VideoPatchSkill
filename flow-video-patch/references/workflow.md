@@ -64,13 +64,16 @@ python scripts/fit_patch.py --config "merge.json" --patch 0 --output "merge-prop
 
 ```bash
 python scripts/qc_tools.py precheck --config "merge-proposed.json" --patch 0
-python scripts/flow_patch.py merge --config "merge-proposed.json" --output "check.mp4" --frames 40:80 --preview
+python scripts/flow_patch.py merge --config "merge-proposed.json" --output "structure-short.mp4" --frames 40:80 --structure-preview
+python scripts/flow_patch.py merge --config "merge-proposed.json" --output "structure-full.mp4" --structure-preview
 python scripts/flow_patch.py merge --config "merge-proposed.json" --output "patched.mp4"
 ```
 
 检查用导出已经会校验配置并探测素材，不需要先单独跑 `--dry-run`（需要只看计划时仍可用，它与检查用导出共用探测缓存）。
 
-先用 `merge --frames START:END --preview` 导出关键区间确认位置与融合（帧号沿用原配置，无需裁源片或重编号；见[参数与命令](parameters.md)），再按最终参数从原始尺寸完整合成。检查用导出不能交付或代替最终文件的视觉验收。不要把1080p预览放大成8K交付。多人从原片一次合成，避免修一次就重压一次。版本迭代仍从原片和原始返回重新导出，尽量合并处理后只做一次最终有损编码。独立补丁须记录是否已去黑边、是否已缩到贴回尺寸。
+如果先关心能否贴回，使用 `--structure-preview --frames START:END` 试查最大运动、遮挡变化和接点，保留实际遮罩／对齐，但暂用alpha、不调色、只输出原像素局部范围。明确形状或动作无法同时对齐时，记录故障源帧及重刷要求，先报告再决定是否继续；不能仅因色差或alpha硬边就判定生成失败。短段通过后，正常速度播放完整结构检查版，再核对整幅上下文。此时仍未验收正式融合或颜色。
+
+进入精修时，可用 `merge --frames START:END --preview` 按原配置确认实际融合和调色（帧号沿用原配置，无需裁源片或重编号；见[参数与命令](parameters.md)），再按最终参数从原始尺寸完整合成。检查用导出不能交付或代替最终文件的视觉验收。不要把1080p预览放大成8K交付。多人从原片一次合成，避免修一次就重压一次。版本迭代仍从原片和原始返回重新导出，尽量合并处理后只做一次最终有损编码。独立补丁须记录是否已去黑边、是否已缩到贴回尺寸。
 
 ## 6. 复核与交付
 
