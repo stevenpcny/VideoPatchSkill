@@ -126,14 +126,22 @@ class QcTools(unittest.TestCase):
                           matte=dict(region=[50, 30, 60, 60], feather=8))])), encoding='utf-8')
         a = argparse.Namespace(config=str(cfg), patch=0, samples=4)
         counts = self.counting(fp)
+        readers = []; reader = fp.Reader
+        def counted_reader(path, *args, **kwargs):
+            readers.append(Path(path).name); return reader(path, *args, **kwargs)
+        self.addCleanup(setattr, fp, 'Reader', reader); fp.Reader = counted_reader
         shared = qc_tools.cmd_precheck(a)
         self.assertEqual(dict(counts), {('up.mp4', False): 1, ('shared-gen.mp4', False): 1})
+        self.assertEqual(readers, ['up.mp4', 'shared-gen.mp4'])  # geometry and seam samples in one pass
         self.assertIsNone(fp._SHARED)  # nothing outlives the command
         counts.clear()
         with mock.patch.object(fp, 'shared_probes', contextlib.nullcontext):
-            unshared = qc_tools.cmd_precheck(a)  # the previous per-step probing
-        self.assertEqual(dict(counts), {('up.mp4', False): 2, ('shared-gen.mp4', False): 4})
+            unshared = qc_tools.cmd_precheck(a)  # per-step probing: the return again in merge_plan
+        self.assertEqual(dict(counts), {('up.mp4', False): 1, ('shared-gen.mp4', False): 2})
         self.assertEqual(json.dumps(shared, sort_keys=True), json.dumps(unshared, sort_keys=True))
+        # The seam inside precheck equals the standalone seam command at the same step.
+        seam = qc_tools.cmd_seam(argparse.Namespace(config=str(cfg), patch=0, step=30//4, sigma=3, threshold=12))
+        self.assertEqual(shared['seam'], seam['summary'])
 
     def test_shared_probe_rereads_replaced_file_and_strict_requests(self):
         import flow_patch as fp
