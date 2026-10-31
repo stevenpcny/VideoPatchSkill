@@ -777,5 +777,17 @@
     "cross_platform_ci": "pending",
     "performance_reference": "docs/plans/top5-time-validation.md: prototype paired CLI29.39% improvement; actual production timing recorded separately",
     "historical_release_archives": "not rebuilt; this is an unreleased change"
+  },
+  "pyramid_workspace_followup": {
+    "date": "2026-10-31",
+    "baseline": "P0 commit71d7029, merged via PR25",
+    "scope": "multiband temporary destinations only; alpha unchanged; no input/output validation removed",
+    "budget": "one shape/levels set per calling thread; cached array payload<=32MiB; oversize slots use original allocation",
+    "targeted_smoke31": "pass: levels1-6, fade, zero/low-budget fallback, immutable prior result, independent thread workspaces",
+    "paired_prototype_full_cli": "5 alternating pairs:19.814→17.702s,10.661%; byte-identical encoded output; frozen baseline",
+    "actual_production_cli": "17.677s, output SHA matches baseline; one observation, not a paired performance claim",
+    "memory": "parent Python peak255143936→260190208 bytes in one separate production comparison; process tree not measured",
+    "full_local_regression_status_at_authoring": "running NumPy/native six-suite matrix; results reported in PR",
+    "release_archives": "not rebuilt; unreleased change"
   }
 }

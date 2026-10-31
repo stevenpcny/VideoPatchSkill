@@ -15,6 +15,7 @@ import importlib.metadata
 from fractions import Fraction
 import hashlib
 import json
+import math
 import multiprocessing
 import os
 from pathlib import Path
@@ -799,6 +800,41 @@ def _matte(spec, frame, size):
     return m
 
 
+class PyramidWorkspace:
+    """Private to one calling thread/configuration; at most 32 MiB of arrays.
+
+    cv2 overwrites each destination before it is consumed. No cached array is
+    returned as the merged uint8 result. Oversize slots use the original allocator.
+    """
+    BUDGET = 32*1024*1024
+
+    def __init__(self, configuration):
+        self.configuration = configuration
+        self.arrays = {}
+        self.bytes = 0
+
+    def pyramid(self, kind, slot, src, size=None):
+        h,w = src.shape[:2]
+        w,h = size or ((w+1)//2,(h+1)//2)
+        shape = (h,w)+src.shape[2:]
+        key = (kind,slot,shape,src.dtype.str)
+        out = self.arrays.get(key)
+        if out is None:
+            count = math.prod(shape)*src.itemsize
+            if count <= self.BUDGET-self.bytes:
+                out = np.empty(shape,src.dtype)
+                self.arrays[key] = out
+                self.bytes += count
+        fn = cv2.pyrDown if kind == 'down' else cv2.pyrUp
+        kwargs = {} if out is None else {'dst':out}
+        if size is not None:
+            kwargs['dstsize'] = size
+        return fn(src,**kwargs)
+
+
+_BLEND_LOCAL = threading.local()
+
+
 def blend(original, patch, m, method, levels):
     # Element-wise steps run in row bands (same expressions, so identical values);
     # OpenCV's pyramid calls are already multithreaded.
@@ -815,13 +851,20 @@ def blend(original, patch, m, method, levels):
         require(method == 'multiband', 'Unknown blend method')
         require(isinstance(levels, int) and 1 <= levels <= 6 and min(m.shape) >= 2**levels*2,
                 'Invalid pyramid level count for patch size')
+        configuration = (m.shape,levels)
+        workspace = getattr(_BLEND_LOCAL,'workspace',None)
+        if workspace is None or workspace.configuration != configuration:
+            workspace = _BLEND_LOCAL.workspace = PyramidWorkspace(configuration)
         ga, gb, gm = [original.astype(np.float32)], [patch.astype(np.float32)], [m]
-        for _ in range(levels):
-            ga.append(cv2.pyrDown(ga[-1])); gb.append(cv2.pyrDown(gb[-1])); gm.append(cv2.pyrDown(gm[-1]))
+        for n in range(levels):
+            ga.append(workspace.pyramid('down',('a',n),ga[-1]))
+            gb.append(workspace.pyramid('down',('b',n),gb[-1]))
+            gm.append(workspace.pyramid('down',('m',n),gm[-1]))
         level = ga[-1]*(1-gm[-1][:,:,None])+gb[-1]*gm[-1][:,:,None]
         for k in range(levels-1, -1, -1):
             size = (ga[k].shape[1], ga[k].shape[0])
-            ua, ub, uo = (cv2.pyrUp(v, dstsize=size) for v in (ga[k+1], gb[k+1], level))
+            ua, ub, uo = (workspace.pyramid('up',(role,k),v,size)
+                          for role,v in zip(('a','b','out'),(ga[k+1],gb[k+1],level)))
             level = out if k == 0 else np.empty(ga[k].shape, np.float32)
             def work(a, b, k=k, ua=ua, ub=ub, uo=uo, level=level):
                 if kernels():

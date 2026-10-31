@@ -1,14 +1,14 @@
 {
   ".gitignore": "e4ad47057106bf047148732d68a78252b20253fcf8f811967bc76d6382eff64c",
   "AGENT_ENTRY.md": "428bf0d94757e5b354e25d72b2f7846cd54fe7b9fc282ab104e2dbf7f04906d2",
-  "CHANGELOG.md": "79793ffd43e4c5b0ddd4037357485b88a36cd8e53c768dacad7857017eabfdfd",
+  "CHANGELOG.md": "7cbc60da89eeeb860acfef90f2f51d9e45944898bc999aa8b25f5bbc59308f71",
   "INTERNAL_USE.md": "0b8fe6c34237aa9e1a811293be1e26f7e7a55741aba7224af069d7224496ec6e",
   "README.md": "0563705b823181c1f32a088a59137f142905f06260bc002b0044322311ffd968",
   "SECURITY.md": "213565dee890dca8524009e08f3b747280bdcf389ee59f9d3eac02d2b26342cd",
   "SKILL.md": "44b81458fecc00c8e5dd6d6ce7231e30d4d43ab6d7040894335267a2ca1736fe",
   "THIRD_PARTY_NOTICES.md": "ad46194ab62b18353aebb2a3e396e91a51788075a05e1d62bd903b06a6fe6a7a",
   "TOOL_POLICY.json": "668421739b16f55434d4d9662b9ee195ac01ad699aa68257a8d7301a701d77e5",
-  "VALIDATION.json": "86cefdda9001e32271cc49d8649103aef0804ebfb79e260600e079a8d70f220e",
+  "VALIDATION.json": "d1ebb21682675833d2c9314ff180cc45f51a6395df589808ecdaa33f18dda2bf",
   "assets/merge-template.json": "cb22a39ee7e3f648902abadd23ee5ee5e64846d7313350cf9c33cb480b3dba40",
   "assets/prepare-template.json": "e0e9dcd6f12cf8c92abf3a1045b0438743e39cdc36f3aa67f31d061664f53bc7",
   "assets/resolve-handoff-template.json": "0589b7a35b83d0c42098d49f1cf0906f7d307ece44fc6c696415d29aedc9e1d5",
@@ -39,7 +39,7 @@
   "references/workflow.md": "4dc1cce2e14846da230a1e3df8a3d032da616391b792c437ba55c9c37706e1c4",
   "requirements.txt": "726d9d8f1ded104a319b166e716c3ac1a876565f370b0ac4c28c225120f50810",
   "scripts/fit_patch.py": "306a11ecf6b38a44db5ab38fe0650187c4efea6cb75ddd0afb97920383738f63",
-  "scripts/flow_patch.py": "f9065f0b5e156fb34b6f5f24e4c456d492c006ae2f1930823e00107504942069",
+  "scripts/flow_patch.py": "0c76cd2248751403cba7b4c7a3564364424d0f214adaf33ba45512fbef00ee23",
   "scripts/qc_tools.py": "9b6c8b846dcdae8400170406232605f3ad1eae80e9a456583d6a9fb2645c34c4",
   "scripts/remote_run.py": "6ba5c0abea8817772279d274f3ebdb5e928b53ff5bf1fd6eaab408fdc8c1937c",
   "tests/color_pipeline_test.py": "404a5803209e2eaec8cc783347955dd716881a14c98ea05639e9d88709f8abaf",
@@ -48,5 +48,5 @@
   "tests/qc_tools_test.py": "2cef005f18d3c3aa4c5094c78f8b6d8b8aed428d3f1b32c63f64b443980ec0b4",
   "tests/remote_run_test.py": "7f454d6150ed18094343428fe1bc4b606e2ec79d8ba00bde31d547ed7643c586",
   "tests/security_test.py": "1fc35ab14d94c5fea97af070aae896f112809f3fb7e01d04e2f45ef5d6f99f41",
-  "tests/smoke_test.py": "f94297361322078eb91b26e700bfbea4228689a164aec764d8a2acb9e4e5c550"
+  "tests/smoke_test.py": "ac3321a41fe207899d64d0de61f69745844f3de7be0a86059b18c6a4d562cbbe"
 }
