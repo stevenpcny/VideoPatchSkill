@@ -33,6 +33,8 @@ description: Prepare masked video clips for Flow and composite returned patches 
 - 收到任何生成返回片、准备合成前，或用户问"能不能贴回去／要不要重刷"、接缝放哪里、话筒和手用哪边：先运行 `python scripts/qc_tools.py precheck --config merge.json --patch N`（自动给出规格、映射、整体几何、残差、颜色、画布空洞、接缝分数及初步结论），再按[返回片贴合度预检与接缝选位](references/return-fit-assessment.md)补齐眨眼、表情等人工项后决定路线。生成片身体也复刻到位时优先整人贴回。
 - 合成与验收交付：每个任务第一次合成前读一次 [检查与限制](references/verification.md)（同一任务的后续迭代不必重读，规则或包版本变化时再读），完成其中的融合性与匹配性检查，并在 `merge` 自动生成的 `*.visual-review.json`（按[视觉验收记录模板](assets/visual-review-template.json)预填了哈希、帧数、自动校验等字段，其余仍为 not_run）上记录实际检查。自动检查通过和视觉验收通过分别报告。
 
+- 观众群体头部律动太统一、要错开动作时机，或观众镜头里单眼闭／长时间眯眼要一并修：读[观众群体律动去同步](references/crowd-desync.md)。默认前两排不改律动，第三排起以整个头颈为单元错位，接缝和问题眼睛用绿块交给生成模型补；先按其中的问题向使用者确认范围。
+
 - 多人头发交界、邻人衣袖上的旧手指残影、扣子／饰物连续性、只借耳部等局部素材、计算边界硬线：读[多人交界与局部借用](references/overlap-and-local-donors.md)，先分清原返回与合成引入的问题；不照搬个别镜头参数。
 
 - 用户要求达芬奇工程、让别人接着修补、保留可调参数或连素材移交：读 [可编辑达芬奇工程交付](references/resolve-project-handoff.md)，使用 [工程交付记录模板](assets/resolve-handoff-template.json)。按需生成原生节点及完整素材交付包；不能只把成片放进工程冒充可编辑补丁。此分支不要求每次打补丁都启动达芬奇，不给外部MCP新增默认授权。
